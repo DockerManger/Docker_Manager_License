@@ -131,8 +131,13 @@ else
   c "  管理员账号: 使用之前部署时设置的密码(数据库未重置,未重新初始化)"
 fi
 echo "------------------------------------------------------------------"
-c "  LICENSE PUBLIC KEY(集成 Docker_Manager_Go 用):"
+c "  LICENSE PUBLIC KEY(独立集成用,默认可忽略):"
 docker compose logs license-server 2>/dev/null | grep -A1 "PUBLIC KEY" | tail -2
+c ""
+c "  ⚠️ 若对接 Docker_Manager_Go:不要集成上面这把新公钥!"
+c "  Docker_Manager_Go 内置的公钥是固定的(与仓库 private/license.key 配对)。"
+c "  请用仓库的 private/license.key 替换 $INSTALL_DIR/private/license.key 后"
+c "  docker compose restart license-server(详情见 docs/DEPLOY.md 第 3 步)。"
 echo "------------------------------------------------------------------"
 c "  查看完整日志: docker compose -f $INSTALL_DIR/docker-compose.yml logs -f license-server"
 echo "=================================================================="

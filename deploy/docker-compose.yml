@@ -20,18 +20,21 @@ services:
       - "3000:3000"
     environment:
       - SERVER_ADDR=:3000
+      - DATA_DIR=/data
       - DATABASE_URL=postgres://license:${POSTGRES_PASSWORD:-licensepass}@postgres:5432/license?sslmode=disable
-      - JWT_SECRET=${JWT_SECRET:?请在 .env 设置 JWT_SECRET}
+      # JWT_SECRET 留空则首次启动自动生成并持久化到 /data/jwt_secret
+      - JWT_SECRET=${JWT_SECRET:-}
       - LICENSE_KEY_ID=${LICENSE_KEY_ID:-2026-01}
       - LICENSE_PRIVATE_KEY_PATH=/private/license.key
-      - ADMIN_USERNAME=${ADMIN_USERNAME}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD}
+      # 管理员:用户名默认 admin;ADMIN_PASSWORD 留空则自动生成并打印在启动日志里
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
       - TZ=Asia/Shanghai
     volumes:
-      # 私钥目录(0600),绝不可提交 Git
-      # 注意:容器以非 root 的 license 用户(uid 100)运行,宿主目录需 chown 100:100
-      # (setup-env.sh 已自动处理;手动部署时执行 chown 100:100 private)
+      # 私钥目录(0600),绝不可提交 Git;entrypoint 启动时自动修复属主,无需手动 chown
       - ./private:/private
+      # 数据目录(JWT secret 持久化)
+      - ./data:/data
     depends_on:
       postgres:
         condition: service_healthy

@@ -37,20 +37,25 @@ LABEL org.opencontainers.image.source="https://github.com/MinimaxFlora/Docker_Ma
 LABEL org.opencontainers.image.version=${VERSION}
 LABEL org.opencontainers.image.revision=${COMMIT}
 LABEL org.opencontainers.image.created=${BUILD_TIME}
-RUN apk add --no-cache ca-certificates tini \
+RUN apk add --no-cache ca-certificates tini su-exec \
     && addgroup -S license && adduser -S -G license license
 
 COPY --from=build /app/license-server /usr/local/bin/license-server
+# entrypoint:root 启动修复挂载目录属主后降权为 license 用户(解决写私钥权限问题)
+COPY deploy/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
 
 # 私钥挂载目录(绝不 COPY 私钥进镜像)
 RUN mkdir -p /private /data \
     && chown -R license:license /private /data
 
-USER license
 ENV SERVER_ADDR=:3000
+ENV DATA_DIR=/data
 ENV LICENSE_PRIVATE_KEY_PATH=/private/license.key
 VOLUME ["/private", "/data"]
 EXPOSE 3000
 
-ENTRYPOINT ["/sbin/tini", "--"]
+# entrypoint 需要 root 权限修复目录属主,再降权执行
+USER root
+ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/entrypoint.sh"]
 CMD ["license-server"]

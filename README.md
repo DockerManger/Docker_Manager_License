@@ -65,16 +65,30 @@ payload = {
 ## 快速开始 (Docker Compose)
 
 ```bash
-cp .env.example .env          # 填写 JWT_SECRET / ADMIN_PASSWORD 等
+# 无需 .env —— 所有敏感配置首次启动自动生成并打印在日志里
 docker compose -f deploy/docker-compose.yml up -d
+docker compose -f deploy/docker-compose.yml logs -f license-server
 ```
 
 首次启动自动完成:
 1. 初始化 PostgreSQL(migration 自动执行)
-2. 生成 Ed25519 私钥 → `./private/license.key` (0600)
-3. 用 `ADMIN_USERNAME/ADMIN_PASSWORD` 创建管理员
+2. 生成 Ed25519 私钥 → `./private/license.key` (0600,entrypoint 自动修复目录权限)
+3. 生成 JWT secret → `./data/jwt_secret` (重启不失效)
+4. 创建管理员,日志中打印:
 
-启动日志会打印 **PUBLIC KEY**(PEM)——复制保存,它是 Docker_Manager_Go 集成所需的唯一密钥材料。
+```
+==============================================
+初始管理员已创建,请立即登录并修改密码:
+  地址: http://<服务器IP>:3000
+  用户名: admin
+  密码: <自动生成的随机密码>
+==============================================
+```
+
+日志还会打印 **PUBLIC KEY**(PEM)——复制保存,它是 Docker_Manager_Go 集成所需的唯一密钥材料。
+
+可选:自定义数据库密码/管理员密码 → `./deploy/setup-env.sh` 或设置环境变量
+(`POSTGRES_PASSWORD` / `ADMIN_USERNAME` / `ADMIN_PASSWORD`)。
 
 ## 本地开发
 

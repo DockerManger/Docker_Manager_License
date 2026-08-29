@@ -7,53 +7,45 @@ package config
 import (
 	"fmt"
 	"os"
-	"strings"
 	"time"
 )
 
 // Config 服务端配置。
 type Config struct {
-	ServerAddr  string // 监听地址,默认 :3000
+	ServerAddr string // 监听地址,默认 :3000
 	DatabaseURL string // PostgreSQL DSN
-	JWTSecret   string // HS256 签名密钥(管理端 JWT)
-	JWTTTL      time.Duration
 
-	LicenseKeyID       string // 当前签发密钥标识,如 "2026-01"(写入每个 License payload)
+	DataDir          string // 数据目录(持久化 JWT secret 等),默认 /data
+	JWTSecret        string // HS256 签名密钥;为空则自动生成并持久化到 DataDir/jwt_secret
+	JWTTTL           time.Duration
+
+	LicenseKeyID       string // 当前签发密钥标识,默认 2026-01
 	LicensePrivKeyPath string // Ed25519 私钥文件路径
 
-	AdminUsername string // 仅首次初始化管理员时使用
-	AdminPassword string // 仅首次初始化管理员时使用(初始化后立即清空)
+	AdminUsername string // 首次初始化管理员用户名,默认 admin
+	AdminPassword string // 首次初始化管理员密码;为空则自动生成并打印到日志
 
 	PublicBasePath string // 公开 API 前缀,默认 /api/v1/public
 	AdminBasePath  string // 管理 API 前缀,默认 /api/v1/admin
 }
 
-// Load 从环境变量加载配置。requireSecrets=true 时校验 JWT_SECRET(生产/服务模式)。
+// Load 从环境变量加载配置。除 DATABASE_URL 外均有默认值/自动生成,开箱即用。
 func Load() (*Config, error) {
 	c := &Config{
 		ServerAddr:         envOr("SERVER_ADDR", ":3000"),
 		DatabaseURL:        os.Getenv("DATABASE_URL"),
+		DataDir:            envOr("DATA_DIR", "/data"),
 		JWTSecret:          os.Getenv("JWT_SECRET"),
 		JWTTTL:             envDur("JWT_TTL", 12*time.Hour),
-		LicenseKeyID:       os.Getenv("LICENSE_KEY_ID"),
+		LicenseKeyID:       envOr("LICENSE_KEY_ID", "2026-01"),
 		LicensePrivKeyPath: envOr("LICENSE_PRIVATE_KEY_PATH", "private/license.key"),
-		AdminUsername:      os.Getenv("ADMIN_USERNAME"),
+		AdminUsername:      envOr("ADMIN_USERNAME", "admin"),
 		AdminPassword:      os.Getenv("ADMIN_PASSWORD"),
 		PublicBasePath:     envOr("PUBLIC_API_BASE", "/api/v1/public"),
 		AdminBasePath:      envOr("ADMIN_API_BASE", "/api/v1/admin"),
 	}
-	var errs []string
 	if c.DatabaseURL == "" {
-		errs = append(errs, "DATABASE_URL is required")
-	}
-	if c.JWTSecret == "" {
-		errs = append(errs, "JWT_SECRET is required")
-	}
-	if c.LicenseKeyID == "" {
-		errs = append(errs, "LICENSE_KEY_ID is required (e.g. 2026-01)")
-	}
-	if len(errs) > 0 {
-		return nil, fmt.Errorf("config: %s", strings.Join(errs, "; "))
+		return nil, fmt.Errorf("config: DATABASE_URL is required")
 	}
 	return c, nil
 }

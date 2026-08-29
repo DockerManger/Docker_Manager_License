@@ -9,12 +9,16 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -79,6 +83,13 @@ func runServer() int {
 		log.Fatalf("config: %v", err)
 	}
 
+	// JWT secret:未设置时自动生成并持久化到 DataDir/jwt_secret(重启不失效)
+	jwtSecret, err := loadOrCreateJWTSecret(cfg)
+	if err != nil {
+		log.Fatalf("jwt secret: %v", err)
+	}
+	cfg.JWTSecret = jwtSecret
+
 	// Ed25519 私钥:不存在则生成(首次部署);存在则加载
 	kp, err := crypto.LoadPrivateKey(cfg.LicensePrivKeyPath)
 	if err != nil {
@@ -115,7 +126,7 @@ func runServer() int {
 	}
 	log.Print("database migrated")
 
-	// 初始化管理员(仅首次:admins 表为空时)
+	// 初始化管理员(仅首次:admins 表为空时;密码未设置则自动生成并打印日志)
 	adminRepo := service.NewAdminRepo(pool)
 	if err := ensureAdmin(ctx, cfg, adminRepo); err != nil {
 		log.Fatalf("ensure admin: %v", err)
@@ -159,7 +170,39 @@ func runServer() int {
 	return 0
 }
 
-// ensureAdmin 首次启动时用环境变量创建管理员。
+// loadOrCreateJWTSecret 优先用环境变量;否则读取/生成 DataDir/jwt_secret(0600)。
+func loadOrCreateJWTSecret(cfg *config.Config) (string, error) {
+	if cfg.JWTSecret != "" {
+		return cfg.JWTSecret, nil
+	}
+	path := filepath.Join(cfg.DataDir, "jwt_secret")
+	if raw, err := os.ReadFile(path); err == nil && strings.TrimSpace(string(raw)) != "" {
+		return strings.TrimSpace(string(raw)), nil
+	}
+	secret, err := randomHex(32)
+	if err != nil {
+		return "", err
+	}
+	if err := os.MkdirAll(cfg.DataDir, 0o700); err != nil {
+		return "", err
+	}
+	if err := os.WriteFile(path, []byte(secret), 0o600); err != nil {
+		return "", err
+	}
+	log.Printf("generated JWT secret, saved to %s (0600)", path)
+	return secret, nil
+}
+
+func randomHex(n int) (string, error) {
+	b := make([]byte, n)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
+// ensureAdmin 首次启动时创建管理员。
+// 密码来源:ADMIN_PASSWORD 环境变量;未设置则自动生成 16 位随机密码并打印到日志。
 func ensureAdmin(ctx context.Context, cfg *config.Config, repo *service.AdminRepo) error {
 	n, err := repo.Count(ctx)
 	if err != nil {
@@ -168,21 +211,43 @@ func ensureAdmin(ctx context.Context, cfg *config.Config, repo *service.AdminRep
 	if n > 0 {
 		return nil
 	}
-	if cfg.AdminUsername == "" || cfg.AdminPassword == "" {
-		return fmt.Errorf("admins table is empty; set ADMIN_USERNAME and ADMIN_PASSWORD to bootstrap the first admin")
+	password := cfg.AdminPassword
+	if password == "" {
+		password, err = randomPassword()
+		if err != nil {
+			return err
+		}
 	}
-	if len(cfg.AdminPassword) < 8 {
+	if len(password) < 8 {
 		return fmt.Errorf("ADMIN_PASSWORD must be at least 8 characters")
 	}
-	hash, err := auth.HashPassword(cfg.AdminPassword)
+	hash, err := auth.HashPassword(password)
 	if err != nil {
 		return err
 	}
 	if err := repo.Create(ctx, cfg.AdminUsername, hash); err != nil {
 		return err
 	}
-	log.Printf("initial admin %q created (bootstrap)", cfg.AdminUsername)
+	log.Printf("==============================================")
+	log.Printf("初始管理员已创建,请立即登录并修改密码:")
+	log.Printf("  地址: http://<服务器IP>%s", cfg.ServerAddr)
+	log.Printf("  用户名: %s", cfg.AdminUsername)
+	log.Printf("  密码: %s", password)
+	log.Printf("==============================================")
 	return nil
+}
+
+// randomPassword 生成 16 位随机密码(字母+数字,易抄写)。
+func randomPassword() (string, error) {
+	const chars = "abcdefghjkmnpqrstuvwxyzABCDEFGHJKMNPQRSTUVWXYZ23456789"
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	for i := range b {
+		b[i] = chars[int(b[i])%len(chars)]
+	}
+	return string(b), nil
 }
 
 // ---------- migrate 子命令 ----------

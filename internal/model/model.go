@@ -11,6 +11,19 @@ const (
 	StatusSuspended = "suspended"
 )
 
+// ActivationStatus 设备激活状态。
+const (
+	ActivationActive      = "active"
+	ActivationDeactivated = "deactivated"
+)
+
+// SigningKeyStatus 签名密钥状态。
+const (
+	SigningKeyActive  = "active"
+	SigningKeyRetired = "retired"
+	SigningKeyRevoked = "revoked"
+)
+
 // Admin 管理端账号。
 type Admin struct {
 	ID           string    `json:"id"`
@@ -34,6 +47,7 @@ type License struct {
 	IssuedAt      int64     `json:"issued_at"`
 	ExpiresAt     int64     `json:"expires_at"`
 	MaxDevices    int       `json:"max_devices"`
+	ActiveDevices int       `json:"active_devices"` // 当前激活设备数(查询时带出)
 	Status        string    `json:"status"`
 	RevokedAt     *int64    `json:"revoked_at,omitempty"`
 	RevokedReason string    `json:"revoked_reason,omitempty"`
@@ -55,18 +69,30 @@ type LicenseRevision struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
-// Activation 设备激活记录(第一版预留:离线验证由消费端本地绑定,
-// 服务端记录仅用于统计/未来在线激活)。
+// Activation 设备激活记录(在线激活闭环:激活/解绑/心跳由服务端权威记录)。
 type Activation struct {
-	ID            int64      `json:"id"`
-	LicenseID     string     `json:"license_id"`
-	DeviceID      string     `json:"device_id"`
-	DeviceName    string     `json:"device_name,omitempty"`
-	ActivatedAt   time.Time  `json:"activated_at"`
-	LastSeenAt    time.Time  `json:"last_seen_at"`
-	DeactivatedAt *time.Time `json:"deactivated_at,omitempty"`
-	IP            string     `json:"ip,omitempty"`
-	Metadata      string     `json:"metadata,omitempty"`
+	ID             int64      `json:"id"`
+	LicenseID      string     `json:"license_id"`                // 展示用 DMG-*(查询时由 licenses 表 join 填充)
+	ActivationCode string     `json:"activation_code,omitempty"` // 激活凭据(客户端 deactivate/verify 携带)
+	DeviceID       string     `json:"device_id"`
+	DeviceName     string     `json:"device_name,omitempty"`
+	ProductVersion string     `json:"product_version,omitempty"`
+	Status         string     `json:"status"` // active / deactivated
+	ActivatedAt    time.Time  `json:"activated_at"`
+	LastSeenAt     time.Time  `json:"last_seen_at"`
+	DeactivatedAt  *time.Time `json:"deactivated_at,omitempty"`
+	IP             string     `json:"ip,omitempty"`
+	Metadata       string     `json:"metadata,omitempty"`
+}
+
+// SigningKey 签名密钥注册表记录。
+type SigningKey struct {
+	KeyID     string     `json:"key_id"`
+	Algorithm string     `json:"algorithm"`
+	PublicKey string     `json:"public_key"` // base64url(ed25519 32 字节)
+	Status    string     `json:"status"`
+	CreatedAt time.Time  `json:"created_at"`
+	RetiredAt *time.Time `json:"retired_at,omitempty"`
 }
 
 // AuditLog 审计日志。

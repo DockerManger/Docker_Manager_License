@@ -6,16 +6,16 @@
 Docker_Manager_License          Docker_Manager_Go (开源)
 ┌─────────────────────┐         ┌─────────────────────┐
 │ Admin Panel (Vue3)  │         │ Ed25519 Public Key  │
-│ License API (Gin)   │         │ License Verify      │
-│ PostgreSQL          │         │ Expiration          │
-│ Ed25519 Private Key │         │ Features            │
-└─────────┬───────────┘         └─────────┬───────────┘
-          │   Signed License (离线文件)     │
-          └────────────────────────────────┘
+│ License API (Gin)   │◄─激活───│ License Verify      │
+│ 在线验证/设备绑定    │◄─验证───│ Expiration          │
+│ PostgreSQL          │◄─解绑───│ Features            │
+│ Ed25519 Private Key │         └─────────────────────┘
+└─────────────────────┘
 ```
 
 **核心原则：签发权属于 License Server，验证权属于 Docker_Manager_Go。
-私钥永远留在 License Server；Docker_Manager_Go 源码公开，只持有公钥。**
+私钥永远留在 License Server；Docker_Manager_Go 源码公开，只持有公钥。
+在线授权闭环：本地 Ed25519 验签防伪造 + 在线激活/设备绑定 + 定期验证(24h)+ 吊销即时生效。**
 
 ---
 
@@ -87,6 +87,25 @@ docker compose -f deploy/docker-compose.yml up -d
 docker compose -f deploy/docker-compose.yml logs -f license-server
 ```
 
+### 域名接入(推荐,Docker_Manager_Go 已内置固定地址)
+
+Docker_Manager_Go 内置官方授权服务器地址 `https://manager.kejizero.xyz/license-api`,
+由 nginx 将 `/license-api/` 反代到 License Server(:3000),**客户端无需任何配置**:
+
+```nginx
+# manager.kejizero.xyz 的 server 块内
+location /license-api/ {
+    proxy_pass http://127.0.0.1:3000/;   # 去掉 /license-api/ 前缀
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+客户端实际请求: `https://manager.kejizero.xyz/license-api/api/v1/public/activate|verify|deactivate`
+(HTTPS 必需;开发/自建服务器可用环境变量 `DM_LICENSE_SERVER_URL` 覆盖客户端地址)。
+
 首次启动自动完成:
 1. 初始化 PostgreSQL(migration 自动执行)
 2. 生成 Ed25519 私钥 → `./private/license.key` (0600,entrypoint 自动修复目录权限)
@@ -141,7 +160,7 @@ make backend      # 后端 → license-server
 所有 Schema 变更走版本化 migration(`internal/database/migrations/`),启动自动执行,
 `make migrate` 可单独执行。禁止运行时"猜结构"改表。
 
-表: `admins` / `licenses` / `license_revisions`(修订历史,不覆盖) / `activations`(设备预留) / `audit_logs`
+| 表: `admins` / `licenses` / `license_revisions`(修订历史,不覆盖) / `activations`(设备激活,在线闭环) / `audit_logs` / `signing_keys`(密钥注册表)
 
 ## 密钥管理
 
@@ -170,8 +189,32 @@ make keygen    # 生成 private/license.key + private/license.pub
 | GET | `/api/v1/admin/licenses/:id/export` | ✅ | 导出 Key(.lic 下载) |
 | POST | `/api/v1/admin/licenses/:id/extend` | ✅ | 延期(新修订) |
 | POST | `/api/v1/admin/licenses/:id/revoke` | ✅ | 吊销(软删除) |
+| GET | `/api/v1/admin/licenses/:id/activations` | ✅ | 设备激活列表 |
+| POST | `/api/v1/admin/licenses/:id/activations/:aid/deactivate` | ✅ | 单个设备解绑 |
+| POST | `/api/v1/admin/licenses/:id/reset-devices` | ✅ | 重置全部设备(审计) |
+| GET | `/api/v1/admin/signing-keys` | ✅ | 签名密钥注册表 |
 | GET | `/api/v1/admin/audit-logs` | ✅ | 审计日志 |
-| POST | `/api/v1/public/verify` | - | 在线状态查询(不替代本地验证) |
+| POST | `/api/v1/public/activate` | - | 在线激活(传完整 Key + device_id,限流) |
+| POST | `/api/v1/public/verify` | - | 定期验证(valid/revoked/expired/invalid + 心跳) |
+| POST | `/api/v1/public/deactivate` | - | 客户端解绑(须携带 activation_id) |
+
+## 在线授权闭环(客户端契约)
+
+Docker_Manager_Go 接入流程(完整契约见 `docs/integration.md` §8):
+
+```
+导入 License → 本地 Ed25519 验签 → POST /public/activate {key, device_id}
+  → 返回 activation_id + expires_at + next_verify_after(86400s)
+→ 每 24h POST /public/verify {key, activation_id, device_id}
+  → valid:继续 Pro / revoked|expired|invalid:禁用 Pro
+→ 解绑 POST /public/deactivate {key, activation_id, device_id}
+```
+
+- **设备上限**:服务端事务 + 行锁保证并发激活不突破 `max_devices`(有并发测试验证)
+- **防跨设备解绑**:deactivate/verify 必须携带激活时返回的 `activation_id`
+- **吊销即时生效**:客户端下次 verify 即收到 `revoked` 并禁用 Pro
+- **限流**:activate/deactivate 15min/20 次,verify 15min/120 次(IP 级,防 Key 爆破)
+- **Grace Period 由客户端本地维护**(`last_successful_verify` + 7 天宽限,服务端不强制)
 
 ## License 生命周期
 
@@ -194,5 +237,6 @@ go test ./internal/api/   # DB 集成测试(需 TEST_DATABASE_URL,CI 提供)
 ## 部署注意事项
 
 - License Server 是**私有的授权签发端**,不建议公开暴露管理 API(内网/VPN 部署)
-- 离线 License 无法实时感知吊销 —— 产品文档需明确:吊销仅对**在线验证**场景即时生效
-- 数据库(PostgreSQL)数据务必定期备份
+- 在线验证是授权闭环的核心:客户端接入 `activate/verify/deactivate` 后,吊销/过期即时生效;
+  纯离线使用(不接入在线验证)仍可本地验签运行,但无法感知吊销(产品文档需明确此差异)
+- 数据库(PostgreSQL)数据务必定期备份(激活记录/审计日志不可重建)

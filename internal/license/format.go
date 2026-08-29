@@ -111,6 +111,20 @@ func ParsePayload(raw []byte) (*Payload, error) {
 	return &p, nil
 }
 
+// DecodePayloadOnly 仅解码 Key 字符串中的 payload(不验签,供提取 key_id 等元数据)。
+// 解析失败返回 false。
+func DecodePayloadOnly(key string) (*Payload, bool) {
+	raw, _, err := DecodeKey(key)
+	if err != nil {
+		return nil, false
+	}
+	p, err := ParsePayload(raw)
+	if err != nil {
+		return nil, false
+	}
+	return p, true
+}
+
 // ---------- Key 编码 ----------
 //
 // Key 字符串格式(与 V1 同样以 "." 分隔两段,便于 Docker_Manager_Go 统一入口分派):

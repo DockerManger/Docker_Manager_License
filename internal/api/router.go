@@ -28,10 +28,12 @@ func Router(d *Deps) *gin.Engine {
 
 	v1 := r.Group("/api/v1")
 
-	// ---------- 公开 ----------
+	// ---------- 公开(在线授权闭环,供 Docker_Manager_Go 客户端) ----------
 	pub := v1.Group("/public")
 	{
+		pub.POST("/activate", publicActivate(d))
 		pub.POST("/verify", publicVerify(d))
+		pub.POST("/deactivate", publicDeactivate(d))
 	}
 
 	// ---------- 管理 ----------
@@ -59,6 +61,11 @@ func Router(d *Deps) *gin.Engine {
 		authed.GET("/licenses/:id/export-json", adminExportLicenseJSON(d))
 		authed.POST("/licenses/:id/extend", adminExtendLicense(d))
 		authed.POST("/licenses/:id/revoke", adminRevokeLicense(d))
+		authed.GET("/licenses/:id/activations", adminListActivations(d))
+		authed.POST("/licenses/:id/activations/:aid/deactivate", adminDeactivateActivation(d))
+		authed.POST("/licenses/:id/reset-devices", adminResetDevices(d))
+
+		authed.GET("/signing-keys", adminListSigningKeys(d))
 
 		authed.GET("/audit-logs", adminAuditLogs(d))
 	}

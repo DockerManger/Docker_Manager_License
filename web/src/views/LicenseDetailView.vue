@@ -36,8 +36,11 @@
         <div class="mono mt-1">{{ license.key_id }}</div>
       </div>
       <div class="card p-4">
-        <div class="text-muted text-[12px]">最大设备数</div>
-        <div class="font-medium mt-1">{{ license.max_devices }}</div>
+        <div class="text-muted text-[12px]">设备占用</div>
+        <div class="font-medium mt-1">
+          {{ license.active_devices ?? 0 }} / {{ license.max_devices }}
+          <span v-if="(license.active_devices ?? 0) >= license.max_devices" class="text-danger text-[12px] ml-1">已满</span>
+        </div>
       </div>
       <div class="card p-4">
         <div class="text-muted text-[12px]">功能</div>
@@ -51,6 +54,57 @@
           {{ license.revoked_reason || (license.status === 'revoked' ? '已吊销' : '-') }}
         </div>
       </div>
+    </div>
+
+    <!-- 设备管理(在线激活闭环) -->
+    <div class="card p-5 mb-5">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="font-semibold text-[14px]">
+          设备
+          <span class="text-muted font-normal">({{ activeCount }} / {{ license.max_devices }})</span>
+        </h3>
+        <button v-if="license.status === 'active'" class="btn btn-ghost btn-sm" :disabled="busy" @click="resetDevices">
+          重置设备
+        </button>
+      </div>
+      <table class="table">
+        <thead>
+          <tr>
+            <th>设备 ID</th>
+            <th>名称</th>
+            <th>版本</th>
+            <th>IP</th>
+            <th>状态</th>
+            <th>激活时间</th>
+            <th>最近在线</th>
+            <th class="w-20">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="a in activations" :key="a.id">
+            <td class="mono">{{ a.device_id }}</td>
+            <td>{{ a.device_name || '-' }}</td>
+            <td class="mono text-muted">{{ a.product_version || '-' }}</td>
+            <td class="mono text-muted">{{ a.ip || '-' }}</td>
+            <td><StatusBadge :status="a.status" /></td>
+            <td class="text-muted">{{ fmtDateTimeStr(a.activated_at) }}</td>
+            <td class="text-muted">{{ fmtDateTimeStr(a.last_seen_at) }}</td>
+            <td>
+              <button
+                v-if="a.status === 'active'"
+                class="btn btn-ghost btn-sm"
+                :disabled="busy"
+                @click="deactivate(a)"
+              >
+                解绑
+              </button>
+            </td>
+          </tr>
+          <tr v-if="!activations.length">
+            <td colspan="8" class="text-center text-muted py-8">暂无设备激活(客户端导入 License 后在线激活)</td>
+          </tr>
+        </tbody>
+      </table>
     </div>
 
     <!-- 修订历史 -->
@@ -97,18 +151,20 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
-import { api, FEATURE_LABELS, type License, type LicenseRevision } from '../api'
+import { api, FEATURE_LABELS, type Activation, type License, type LicenseRevision } from '../api'
 import StatusBadge from '../components/StatusBadge.vue'
 
 const route = useRoute()
 const license = ref<License | null>(null)
 const revisions = ref<LicenseRevision[]>([])
+const activations = ref<Activation[]>([])
 const showExtend = ref(false)
 const extendDays = ref(365)
 const extendReason = ref('renewal')
 const busy = ref(false)
 
 const isExpired = computed(() => !!license.value && license.value.expires_at * 1000 < Date.now())
+const activeCount = computed(() => activations.value.filter((a) => a.status === 'active').length)
 
 function fmtDate(ts: number) {
   return new Date(ts * 1000).toLocaleDateString('zh-CN')
@@ -117,15 +173,20 @@ function fmtDateTime(ts: number) {
   return new Date(ts * 1000).toLocaleString('zh-CN')
 }
 function fmtDateTimeStr(s: string) {
+  if (!s) return '-'
   return new Date(s).toLocaleString('zh-CN')
 }
 
 async function load() {
   const id = route.params.id as string
-  const res = await api.get<{ license: License }>(`/api/v1/admin/licenses/${id}`)
-  license.value = res.license
-  const revs = await api.get<{ items: LicenseRevision[] }>(`/api/v1/admin/licenses/${id}/revisions`)
+  const [lic, revs, acts] = await Promise.all([
+    api.get<{ license: License }>(`/api/v1/admin/licenses/${id}`),
+    api.get<{ items: LicenseRevision[] }>(`/api/v1/admin/licenses/${id}/revisions`),
+    api.get<{ items: Activation[] }>(`/api/v1/admin/licenses/${id}/activations`),
+  ])
+  license.value = lic.license
   revisions.value = revs.items || []
+  activations.value = acts.items || []
 }
 
 function openExtend() {
@@ -156,6 +217,32 @@ async function revoke() {
     load()
   } catch (e: any) {
     alert(e?.message || '吊销失败')
+  }
+}
+
+async function deactivate(a: Activation) {
+  if (!window.confirm(`解绑设备 ${a.device_id}?解绑后该设备需重新激活。`)) return
+  busy.value = true
+  try {
+    await api.post(`/api/v1/admin/licenses/${license.value!.license_id}/activations/${a.id}/deactivate`)
+    load()
+  } catch (e: any) {
+    alert(e?.message || '解绑失败')
+  } finally {
+    busy.value = false
+  }
+}
+
+async function resetDevices() {
+  if (!window.confirm(`重置该 License 全部设备(${activeCount.value} 台)?所有设备需重新激活。`)) return
+  busy.value = true
+  try {
+    await api.post(`/api/v1/admin/licenses/${license.value!.license_id}/reset-devices`)
+    load()
+  } catch (e: any) {
+    alert(e?.message || '重置失败')
+  } finally {
+    busy.value = false
   }
 }
 

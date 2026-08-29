@@ -12,18 +12,23 @@ import (
 	"github.com/MinimaxFlora/Docker_Manager_License/internal/model"
 )
 
-// LicenseService License 业务核心:签发 / 查询 / 延期 / 吊销。
+// LicenseService License 业务核心:签发 / 查询 / 延期 / 吊销 / 在线激活验证。
 // 签名只在这里发生(依赖 Ed25519 私钥),API 层只做参数传递。
 type LicenseService struct {
-	repo    *LicenseRepo
-	audit   *AuditRepo
-	keyPair *crypto.KeyPair
-	keyID   string
+	repo           *LicenseRepo
+	activationRepo *ActivationRepo
+	signingKeys    *SigningKeyRepo
+	audit          *AuditRepo
+	keyPair        *crypto.KeyPair
+	keyID          string
 }
 
 // NewLicenseService 构造。
-func NewLicenseService(repo *LicenseRepo, audit *AuditRepo, keyPair *crypto.KeyPair, keyID string) *LicenseService {
-	return &LicenseService{repo: repo, audit: audit, keyPair: keyPair, keyID: keyID}
+func NewLicenseService(repo *LicenseRepo, activationRepo *ActivationRepo, signingKeys *SigningKeyRepo, audit *AuditRepo, keyPair *crypto.KeyPair, keyID string) *LicenseService {
+	return &LicenseService{
+		repo: repo, activationRepo: activationRepo, signingKeys: signingKeys,
+		audit: audit, keyPair: keyPair, keyID: keyID,
+	}
 }
 
 // IssueRequest 签发请求(API 层解析后传入)。
@@ -211,30 +216,6 @@ func (s *LicenseService) Stats(ctx context.Context) (map[string]any, error) {
 // PublicKey 返回当前签发公钥(供测试与集成文档输出)。
 func (s *LicenseService) PublicKey() []byte {
 	return s.keyPair.Public
-}
-
-// VerifyPublic 公开验证:解析 Key → 验签 → 返回状态(不改变任何数据)。
-// 仅供在线状态查询;消费端真伪判断永远以本地 Ed25519 验证为准。
-func (s *LicenseService) VerifyPublic(ctx context.Context, key string) (map[string]any, error) {
-	p, ok := license.VerifyKey(key, s.keyPair.Public)
-	if !ok {
-		return map[string]any{"valid": false}, nil
-	}
-	// 在线端再叠加吊销状态(离线消费端无法感知,这里明确区分)
-	status := p.Status(Now())
-	l, err := s.repo.GetByLicenseID(ctx, p.LicenseID)
-	if err == nil && l.Status == model.StatusRevoked {
-		status = "revoked"
-	}
-	return map[string]any{
-		"valid":      true,
-		"status":     status,
-		"license_id": p.LicenseID,
-		"plan":       p.Plan,
-		"customer":   p.Customer,
-		"expires_at": p.ExpiresAt,
-		"features":   p.Features,
-	}, nil
 }
 
 // ---------- 内部 ----------

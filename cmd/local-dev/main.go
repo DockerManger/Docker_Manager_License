@@ -37,11 +37,13 @@ func main() {
 	log.Println("✓ embedded postgres ready on 127.0.0.1:5433 (db=license user=license)")
 
 	// ---------- 2. 启动 license-server 子进程 ----------
+	// 私钥用仓库 private/license.key(与 Docker_Manager_Go 内置公钥配对;部署时带同一份私钥)
+	privKeyPath := filepath.Join("private", "license.key")
 	env := append(os.Environ(),
 		"DATABASE_URL=postgres://license:licensepass@127.0.0.1:5433/license?sslmode=disable",
 		"JWT_SECRET=local-dev-secret",
 		"LICENSE_KEY_ID=2026-01",
-		"LICENSE_PRIVATE_KEY_PATH="+filepath.Join(os.TempDir(), "dml-local", "license.key"),
+		"LICENSE_PRIVATE_KEY_PATH="+privKeyPath,
 		"DATA_DIR="+filepath.Join(os.TempDir(), "dml-local"),
 		"SERVER_ADDR=:3000",
 	)

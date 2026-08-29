@@ -190,34 +190,6 @@ func adminLicenseStats(d *Deps) gin.HandlerFunc {
 	}
 }
 
-// ---------- 公开验证 ----------
-
-// publicVerify POST /api/v1/public/verify
-// 在线状态查询(吊销/过期/设备限制的权威在线端)。
-// 注意:消费端(Docker_Manager_Go)真伪判断永远以本地 Ed25519 验证为准,
-// 此接口仅补充在线状态信息,不替代本地验证。
-func publicVerify(d *Deps) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		var req struct {
-			Key string `json:"key"`
-		}
-		if err := c.ShouldBindJSON(&req); err != nil {
-			handleError(c, err)
-			return
-		}
-		if strings.TrimSpace(req.Key) == "" {
-			abort(c, http.StatusBadRequest, "BAD_REQUEST", "key is required")
-			return
-		}
-		out, err := d.LicenseSvc.VerifyPublic(c.Request.Context(), strings.TrimSpace(req.Key))
-		if err != nil {
-			handleError(c, err)
-			return
-		}
-		c.JSON(http.StatusOK, out)
-	}
-}
-
 // ---------- 工具 ----------
 
 // parseID 兼容参数中的数字 ID(预留)。

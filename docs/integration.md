@@ -189,13 +189,72 @@ func V2VerifyKey(key string, pub ed25519.PublicKey) (map[string]any, bool) {
 - 迁移期结束（可选）在 Docker_Manager_Go 增加配置关闭 V1 路径
 - License payload 带 `version`，未来 v3 由消费端明确拒绝而不是静默接受
 
-## 8. 在线验证 API（可选接入）
+## 8. 在线授权闭环 API(客户端接入)
 
-`POST /api/v1/public/verify`（公开，body: `{"key": "..."}`）返回：
+客户端(消费端)导入 License 并通过本地 Ed25519 验签后,进入在线闭环:
 
-```json
-{ "valid": true, "status": "active|expired|revoked", "license_id": "DMG-...",
-  "plan": "pro", "customer": "Zhao", "expires_at": 1808928000, "features": ["compose"] }
+### 8.1 激活
+
+```
+POST /api/v1/public/activate
+{ "key": "<完整 License Key>", "device_id": "<机器唯一ID>",
+  "device_name": "可选", "product_version": "可选" }
 ```
 
-用途：吊销状态在线查询、激活统计。**不替代本地验证** —— 面板的真伪判断永远是本地 Ed25519 验签。
+成功(200):
+```json
+{ "status": "active", "activation_id": "<64位hex>", "license_id": "DMG-...",
+  "expires_at": 1810000000, "features": ["compose"], "max_devices": 3,
+  "next_verify_after": 86400 }
+```
+
+失败(统一错误体):`INVALID_SIGNATURE` / `LICENSE_NOT_FOUND` / `LICENSE_REVOKED` /
+`LICENSE_EXPIRED` / `DEVICE_LIMIT_REACHED`。
+
+语义:
+- 同一设备重复激活 → 幂等(200,返回原 activation_id)
+- 解绑过的设备重新激活 → 恢复 active,发新 activation_id,不占新额度
+- 活跃设备数 >= max_devices → `DEVICE_LIMIT_REACHED`(服务端事务+行锁,并发激活不突破)
+
+### 8.2 定期验证(每 24h,即 next_verify_after)
+
+```
+POST /api/v1/public/verify
+{ "key": "...", "activation_id": "...", "device_id": "...", "product_version": "可选" }
+```
+
+返回:
+```json
+{ "status": "valid", "valid": true, "license_id": "DMG-...", "plan": "pro",
+  "customer": "Zhao", "expires_at": 1810000000, "features": ["compose"],
+  "next_verify_after": 86400 }
+```
+
+| status | 客户端动作 |
+|---|---|
+| `valid` | 继续 Pro,记录 `last_successful_verify`,24h 后再验 |
+| `revoked` | 立即禁用 Pro,提示"License revoked" |
+| `expired` | 立即禁用 Pro(本地 expires_at 也应同时判断) |
+| `invalid` | 设备未激活/凭据不匹配,禁用 Pro |
+
+兼容:仅传 `key`(不带 device_id)→ 返回 License 在线状态,不校验设备(旧调用兼容)。
+
+### 8.3 解绑
+
+```
+POST /api/v1/public/deactivate
+{ "key": "...", "activation_id": "...", "device_id": "..." }
+```
+
+- 必须携带激活时返回的 `activation_id`,防止 Device A 解绑 Device B(不匹配 → `ACTIVATION_NOT_FOUND`)
+- 吊销/过期的 License 也允许解绑(客户端清理)
+
+### 8.4 限流
+
+`activate`/`deactivate`:15min 20 次/IP;`verify`:15min 120 次/IP。超限 `RATE_LIMITED`。
+
+### 8.5 Grace Period(客户端本地维护)
+
+服务端只负责状态判定;7 天宽限由客户端保存 `last_successful_verify` 实现:
+验证失败(网络/服务不可达)→ 宽限期内继续 Pro;超过宽限期仍未验证成功 → 禁用 Pro。
+**验证必须带超时(建议 10s),且不得阻塞 Docker_Manager_Go 主流程(独立后台任务)。**

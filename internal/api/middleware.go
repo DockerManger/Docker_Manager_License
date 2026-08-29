@@ -12,12 +12,16 @@ import (
 
 // Deps API 依赖集合(构造时注入)。
 type Deps struct {
-	AdminRepo  *service.AdminRepo
-	LicenseSvc *service.LicenseService
-	AuditRepo  *service.AuditRepo
-	JWTSecret  string
-	JWTTTL     time.Duration
-	Limiter    *auth.LoginLimiter
+	AdminRepo      *service.AdminRepo
+	LicenseSvc     *service.LicenseService
+	AuditRepo      *service.AuditRepo
+	ActivationRepo *service.ActivationRepo
+	SigningKeyRepo *service.SigningKeyRepo
+	JWTSecret      string
+	JWTTTL         time.Duration
+	Limiter        *auth.LoginLimiter // 登录限流
+	ActivateLim    *auth.LoginLimiter // 激活/解绑限流(防爆破)
+	VerifyLim      *auth.LoginLimiter // 在线验证限流(宽松)
 }
 
 // ctxAdmin 从上下文取当前管理员用户名。

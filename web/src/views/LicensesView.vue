@@ -42,7 +42,11 @@
             <td><span class="badge badge-muted">{{ l.plan }}</span></td>
             <td><StatusBadge :status="l.status" /></td>
             <td class="text-muted">{{ fmtDate(l.expires_at) }}</td>
-            <td class="text-muted">{{ l.max_devices }}</td>
+            <td>
+              <span class="badge" :class="(l.active_devices ?? 0) >= l.max_devices ? 'badge-warn' : 'badge-muted'">
+                {{ l.active_devices ?? 0 }} / {{ l.max_devices }}
+              </span>
+            </td>
             <td>
               <div class="flex gap-1.5">
                 <router-link class="btn btn-ghost btn-sm" :to="`/licenses/${l.license_id}`">详情</router-link>

@@ -87,14 +87,17 @@ type LicenseRepo struct{ pool *pgxpool.Pool }
 // NewLicenseRepo 构造。
 func NewLicenseRepo(pool *pgxpool.Pool) *LicenseRepo { return &LicenseRepo{pool: pool} }
 
-const licenseCols = `id, license_id, key_id, product, plan, features, customer,
-	issued_at, expires_at, max_devices, status, revoked_at, revoked_reason, notes, created_at, updated_at`
+// licenseCols 带 active_devices 子查询(所有 SELECT 共用,表别名固定为 l)。
+const licenseCols = `l.id, l.license_id, l.key_id, l.product, l.plan, l.features, l.customer,
+	l.issued_at, l.expires_at, l.max_devices,
+	(SELECT COUNT(*) FROM activations a WHERE a.license_id = l.id AND a.status = 'active') AS active_devices,
+	l.status, l.revoked_at, l.revoked_reason, l.notes, l.created_at, l.updated_at`
 
 func scanLicense(row pgx.Row) (*model.License, error) {
 	var l model.License
 	err := row.Scan(&l.ID, &l.LicenseID, &l.KeyID, &l.Product, &l.Plan, &l.Features, &l.Customer,
-		&l.IssuedAt, &l.ExpiresAt, &l.MaxDevices, &l.Status, &l.RevokedAt, &l.RevokedReason, &l.Notes,
-		&l.CreatedAt, &l.UpdatedAt)
+		&l.IssuedAt, &l.ExpiresAt, &l.MaxDevices, &l.ActiveDevices,
+		&l.Status, &l.RevokedAt, &l.RevokedReason, &l.Notes, &l.CreatedAt, &l.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
@@ -119,13 +122,13 @@ func (r *LicenseRepo) Create(ctx context.Context, l *model.License) error {
 // GetByLicenseID 按展示 ID 查询。
 func (r *LicenseRepo) GetByLicenseID(ctx context.Context, licenseID string) (*model.License, error) {
 	return scanLicense(r.pool.QueryRow(ctx,
-		`SELECT `+licenseCols+` FROM licenses WHERE license_id = $1`, licenseID))
+		`SELECT `+licenseCols+` FROM licenses l WHERE l.license_id = $1`, licenseID))
 }
 
 // GetByDBID 按数据库 UUID 查询。
 func (r *LicenseRepo) GetByDBID(ctx context.Context, id string) (*model.License, error) {
 	return scanLicense(r.pool.QueryRow(ctx,
-		`SELECT `+licenseCols+` FROM licenses WHERE id = $1`, id))
+		`SELECT `+licenseCols+` FROM licenses l WHERE l.id = $1`, id))
 }
 
 // List 分页列表(按创建时间倒序)。
@@ -134,15 +137,15 @@ func (r *LicenseRepo) List(ctx context.Context, offset, limit int, status string
 	where := ""
 	args := []any{limit, offset}
 	if status != "" {
-		where = " WHERE status = $3"
+		where = " WHERE l.status = $3"
 		args = append(args, status)
 	}
-	if err := r.pool.QueryRow(ctx, `SELECT COUNT(*) FROM licenses`+where,
+	if err := r.pool.QueryRow(ctx, `SELECT COUNT(*) FROM licenses l`+where,
 		append([]any{}, args[2:]...)...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
-	rows, err := r.pool.Query(ctx, `SELECT `+licenseCols+` FROM licenses`+where+
-		` ORDER BY created_at DESC LIMIT $1 OFFSET $2`, args...)
+	rows, err := r.pool.Query(ctx, `SELECT `+licenseCols+` FROM licenses l`+where+
+		` ORDER BY l.created_at DESC LIMIT $1 OFFSET $2`, args...)
 	if err != nil {
 		return nil, 0, err
 	}

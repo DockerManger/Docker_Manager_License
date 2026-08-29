@@ -71,9 +71,32 @@ export interface License {
   issued_at: number
   expires_at: number
   max_devices: number
+  active_devices: number
   status: string
   revoked_reason: string
   notes: string
+  created_at: string
+}
+
+export interface Activation {
+  id: number
+  license_id: string
+  activation_code: string
+  device_id: string
+  device_name: string
+  product_version: string
+  status: string
+  activated_at: string
+  last_seen_at: string
+  deactivated_at: string | null
+  ip: string
+}
+
+export interface SigningKey {
+  key_id: string
+  algorithm: string
+  public_key: string
+  status: string
   created_at: string
 }
 

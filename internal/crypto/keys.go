@@ -9,6 +9,7 @@ package crypto
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -87,4 +88,21 @@ var ErrKeyNotFound = errors.New("private key not found")
 func PublicKeyPEM(pub ed25519.PublicKey) string {
 	der, _ := marshalPKIXPublicKey(pub)
 	return string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der}))
+}
+
+// PublicKeyBase64URL 公钥编码为 base64url(签名密钥注册表存储格式)。
+func PublicKeyBase64URL(pub ed25519.PublicKey) string {
+	return base64.RawURLEncoding.EncodeToString(pub)
+}
+
+// PublicKeyFromBase64URL 解码 base64url 公钥(按 key_id 查表验签用)。
+func PublicKeyFromBase64URL(s string) (ed25519.PublicKey, error) {
+	raw, err := base64.RawURLEncoding.DecodeString(s)
+	if err != nil {
+		return nil, fmt.Errorf("decode public key: %w", err)
+	}
+	if len(raw) != ed25519.PublicKeySize {
+		return nil, fmt.Errorf("invalid public key length: %d", len(raw))
+	}
+	return ed25519.PublicKey(raw), nil
 }

@@ -62,6 +62,20 @@ func handleError(c *gin.Context, err error) {
 		return
 	}
 	switch {
+	case errors.Is(err, service.ErrLicenseNotFound):
+		abort(c, http.StatusNotFound, "LICENSE_NOT_FOUND", "license not found")
+	case errors.Is(err, service.ErrLicenseRevoked):
+		abort(c, http.StatusForbidden, "LICENSE_REVOKED", "license has been revoked")
+	case errors.Is(err, service.ErrLicenseExpired):
+		abort(c, http.StatusBadRequest, "LICENSE_EXPIRED", "license has expired")
+	case errors.Is(err, service.ErrDeviceLimit):
+		abort(c, http.StatusConflict, "DEVICE_LIMIT_REACHED", "device limit reached for this license")
+	case errors.Is(err, service.ErrActivationMismatch):
+		abort(c, http.StatusNotFound, "ACTIVATION_NOT_FOUND", "activation not found or does not match device")
+	case errors.Is(err, service.ErrInvalidSignature):
+		abort(c, http.StatusBadRequest, "INVALID_SIGNATURE", "invalid license key signature")
+	case errors.Is(err, service.ErrActivationMissing):
+		abort(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
 	case errors.Is(err, service.ErrNotFound):
 		abort(c, http.StatusNotFound, "NOT_FOUND", "resource not found")
 	case errors.Is(err, service.ErrConflict):

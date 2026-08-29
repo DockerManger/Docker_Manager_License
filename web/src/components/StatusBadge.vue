@@ -12,6 +12,7 @@ const map: Record<string, { cls: string; label: string }> = {
   expired: { cls: 'badge-warn', label: '已过期' },
   revoked: { cls: 'badge-danger', label: '已吊销' },
   suspended: { cls: 'badge-warn', label: '已挂起' },
+  deactivated: { cls: 'badge-muted', label: '已解绑' },
 }
 
 const cls = computed(() => map[props.status]?.cls || 'badge-muted')

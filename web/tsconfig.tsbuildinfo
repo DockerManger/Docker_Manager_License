@@ -1,0 +1,1 @@
+{"root":["./src/api.ts","./src/main.ts","./src/router.ts","./src/app.vue","./src/components/statusbadge.vue","./src/layouts/mainlayout.vue","./src/views/auditlogsview.vue","./src/views/dashboardview.vue","./src/views/licensedetailview.vue","./src/views/licensesview.vue","./src/views/loginview.vue","./src/views/settingsview.vue"],"version":"5.8.3"}

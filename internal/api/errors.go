@@ -1,0 +1,72 @@
+// Package api Gin HTTP 层:路由、中间件、请求/响应。
+// 业务逻辑一律在 service 层,API 层只做参数解析与错误映射。
+package api
+
+import (
+	"errors"
+	"net/http"
+
+	"github.com/gin-gonic/gin"
+
+	"github.com/MinimaxFlora/Docker_Manager_License/internal/service"
+)
+
+// ---------- 统一错误结构 ----------
+//
+// 响应格式: {"error": {"code": "LICENSE_NOT_FOUND", "message": "..."}}
+// 禁止把 SQL error / 文件路径 / 私钥路径 / 堆栈 直接返回客户端。
+
+// ErrorBody 统一错误体。
+type ErrorBody struct {
+	Error ErrorDetail `json:"error"`
+}
+
+// ErrorDetail 错误详情。
+type ErrorDetail struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+// ApiError 带 HTTP 状态的业务错误。
+type ApiError struct {
+	Status  int
+	Code    string
+	Message string
+}
+
+// Error 实现 error 接口。
+func (e *ApiError) Error() string { return e.Code + ": " + e.Message }
+
+// NewApiError 构造。
+func NewApiError(status int, code, msg string) *ApiError {
+	return &ApiError{Status: status, Code: code, Message: msg}
+}
+
+// errorCodes 常见错误码。
+var (
+	ErrUnauthorized = NewApiError(http.StatusUnauthorized, "UNAUTHORIZED", "authentication required")
+	ErrForbidden    = NewApiError(http.StatusForbidden, "FORBIDDEN", "permission denied")
+	ErrRateLimited  = NewApiError(http.StatusTooManyRequests, "RATE_LIMITED", "too many attempts, try later")
+)
+
+// abort 写统一错误响应。
+func abort(c *gin.Context, status int, code, msg string) {
+	c.AbortWithStatusJSON(status, ErrorBody{Error: ErrorDetail{Code: code, Message: msg}})
+}
+
+// handleError 把任意 error 映射为统一响应。
+func handleError(c *gin.Context, err error) {
+	var ae *ApiError
+	if errors.As(err, &ae) {
+		abort(c, ae.Status, ae.Code, ae.Message)
+		return
+	}
+	switch {
+	case errors.Is(err, service.ErrNotFound):
+		abort(c, http.StatusNotFound, "NOT_FOUND", "resource not found")
+	case errors.Is(err, service.ErrConflict):
+		abort(c, http.StatusConflict, "CONFLICT", err.Error())
+	default:
+		abort(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+	}
+}

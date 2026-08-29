@@ -1,9 +1,9 @@
 // local-dev — 本地完整部署辅助工具(无需 Docker/PostgreSQL)
 //
 // 用法: go run ./cmd/local-dev
-//   1. 启动嵌入式 PostgreSQL(临时实例,:5433,自动下载二进制)
-//   2. 以子进程启动 license-server(连接该 PG)
-//   3. 浏览器访问 http://localhost:3000
+//  1. 启动嵌入式 PostgreSQL(临时实例,:5433,自动下载二进制)
+//  2. 以子进程启动 license-server(连接该 PG)
+//  3. 浏览器访问 http://localhost:3000
 //
 // 说明:仅用于本地开发/复现,生产部署用 deploy/docker-compose.yml。
 package main

@@ -28,7 +28,9 @@ env:
 
 jobs:
   # ============ Job 1: 二进制发布(GitHub Release) ============
+  # 仅 tag 推送触发(gh-release 需要 tag);手动 dispatch 只推 Docker 镜像
   binaries:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     strategy:
       matrix:

@@ -64,6 +64,9 @@ payload = {
 
 ## 快速开始 (Docker Compose,单容器全包)
 
+> **完整的「一步一步照着做」部署流程(IP 直连 / 域名 HTTPS 两种方式)见 [docs/DEPLOY.md](docs/DEPLOY.md)。**
+> 下面是最简版本。
+
 > 镜像内置 license-server + nginx 反代 + PostgreSQL,**对外仅暴露 80 端口**,
 > 无需在宿主机配置 nginx / PostgreSQL / .env。
 

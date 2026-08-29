@@ -2,14 +2,17 @@
 # Docker Manager License — 签发服务端 Docker Compose 部署
 #
 # 快速开始:
-#   1. 复制 .env.example 为 .env,填写 JWT_SECRET / ADMIN_USERNAME / ADMIN_PASSWORD
-#   2. docker compose up -d
-#   3. 首次启动自动:初始化数据库 + 生成 Ed25519 私钥(private/license.key)
-#      日志中会打印 PUBLIC KEY —— 把它集成到 Docker_Manager_Go
+#   docker compose up -d
+#   首次启动自动:初始化数据库 + 生成 Ed25519 私钥(private/license.key)
+#                 + 生成管理员密码(打印在日志里)+ JWT secret
+#
+# HTTPS 访问(推荐,防网络链路篡改):
+#   设置 CF_TUNNEL_TOKEN 后: docker compose --profile tunnel up -d
+#   浏览器通过 https://<域名>/ 访问,流量走 Cloudflare 加密通道
 #
 # 安全提示:
 #   - private/ 目录(含私钥)不要提交 Git、不要备份到公开位置
-#   - 私钥文件权限 0600
+#   - 私钥文件权限 0600(entrypoint 自动修复目录属主)
 # ============================================================
 services:
   license-server:
@@ -43,6 +46,18 @@ services:
       interval: 30s
       timeout: 5s
       retries: 3
+
+  # Cloudflare Tunnel(可选):设置 CF_TUNNEL_TOKEN 后启用,HTTPS 访问不受网络链路干扰
+  #   docker compose --profile tunnel up -d
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    profiles: ["tunnel"]
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run
+    environment:
+      - TUNNEL_TOKEN=${CF_TUNNEL_TOKEN:?设置 CF_TUNNEL_TOKEN 后启动}
+    depends_on:
+      - license-server
 
   postgres:
     image: postgres:18-alpine

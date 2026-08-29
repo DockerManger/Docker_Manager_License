@@ -99,7 +99,16 @@ fi
 
 # ---------- 6. 启动 ----------
 c "==> 拉取镜像并启动(首次约 1-2 分钟)..."
-docker compose up -d
+COMPOSE_ARGS=""
+# 配置了 Cloudflare Tunnel token 则启用 tunnel profile(HTTPS 访问)
+if [ -n "${CF_TUNNEL_TOKEN:-}" ]; then
+  {
+    echo "CF_TUNNEL_TOKEN=$CF_TUNNEL_TOKEN"
+  } >> .env
+  COMPOSE_ARGS="--profile tunnel"
+  ok "Cloudflare Tunnel 已启用(HTTPS)"
+fi
+docker compose $COMPOSE_ARGS up -d
 
 # ---------- 7. 输出部署信息 ----------
 sleep 6

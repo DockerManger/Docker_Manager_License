@@ -28,7 +28,10 @@ services:
       - ADMIN_PASSWORD=${ADMIN_PASSWORD}
       - TZ=Asia/Shanghai
     volumes:
-      - ./private:/private       # Ed25519 私钥(0600),绝不可提交 Git
+      # 私钥目录(0600),绝不可提交 Git
+      # 注意:容器以非 root 的 license 用户(uid 100)运行,宿主目录需 chown 100:100
+      # (setup-env.sh 已自动处理;手动部署时执行 chown 100:100 private)
+      - ./private:/private
     depends_on:
       postgres:
         condition: service_healthy

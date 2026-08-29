@@ -22,6 +22,11 @@ fi
 
 umask 077
 
+# 容器内 license 用户 uid:gid = 100:100(非 root 运行)
+# 预创建挂载目录并授权,否则容器无法写私钥(permission denied 循环重启)
+mkdir -p private postgres-data
+chown -R 100:100 private postgres-data 2>/dev/null || true
+
 gen() { openssl rand -hex "${1:-32}"; }
 
 cat > "$ENV_FILE" <<EOF

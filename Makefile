@@ -49,6 +49,7 @@ web:
 	cd $(WEB_DIR) && npm install --no-audit --no-fund && npm run build
 
 backend:
+	@test -f web/dist/index.html || (echo "web/dist 不存在,请先执行 make web 构建前端"; exit 1)
 	CGO_ENABLED=0 $(GO) build -trimpath -ldflags="$(LDFLAGS)" -o $(BIN) ./cmd/license-server
 
 run: all

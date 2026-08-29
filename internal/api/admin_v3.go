@@ -113,7 +113,7 @@ func adminCreateSubscription(d *Deps) gin.HandlerFunc {
 			ExpiresAt:      req.ExpiresAt,
 			AutoRenew:      req.AutoRenew,
 		}
-		if err := d.SubscriptionRepo.Create(c.Request.Context(), sub); err != nil {
+		if err := d.SubscriptionRepo.Create(c.Request.Context(), sub, cust.ID); err != nil {
 			handleError(c, err)
 			return
 		}

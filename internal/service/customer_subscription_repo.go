@@ -76,12 +76,13 @@ type SubscriptionRepo struct{ pool *pgxpool.Pool }
 // NewSubscriptionRepo 构造。
 func NewSubscriptionRepo(pool *pgxpool.Pool) *SubscriptionRepo { return &SubscriptionRepo{pool: pool} }
 
-// Create 创建订阅。
-func (r *SubscriptionRepo) Create(ctx context.Context, s *model.Subscription) error {
+// Create 创建订阅。customerDBID 为 customers 表数据库 UUID(外键),
+// s.CustomerID 为展示 ID(CUS-*),Create 后由调用方保留供 JSON 展示。
+func (r *SubscriptionRepo) Create(ctx context.Context, s *model.Subscription, customerDBID string) error {
 	return r.pool.QueryRow(ctx, `
 		INSERT INTO subscriptions (subscription_id, customer_id, plan, status, starts_at, expires_at, auto_renew)
 		VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id, created_at, updated_at`,
-		s.SubscriptionID, s.CustomerID, s.Plan, s.Status, s.StartsAt, s.ExpiresAt, s.AutoRenew,
+		s.SubscriptionID, customerDBID, s.Plan, s.Status, s.StartsAt, s.ExpiresAt, s.AutoRenew,
 	).Scan(&s.ID, &s.CreatedAt, &s.UpdatedAt)
 }
 

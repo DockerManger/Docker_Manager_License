@@ -48,7 +48,9 @@ services:
       - POSTGRES_DB=license
       - TZ=Asia/Shanghai
     volumes:
-      - ./postgres-data:/var/lib/postgresql/data   # 数据库持久化
+      # PostgreSQL 18+ 新布局:数据挂载到 /var/lib/postgresql(主版本子目录),
+      # 不能挂 /var/lib/postgresql/data(旧布局,18 镜像会拒绝启动)
+      - ./postgres-data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U license -d license"]
       interval: 10s

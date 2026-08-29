@@ -119,9 +119,22 @@ func (s *LicenseService) Issue(ctx context.Context, req IssueRequest) (*IssueRes
 	return &IssueResult{License: l, Key: key, Payload: string(payload.CanonicalJSON())}, nil
 }
 
+// resolveLicense 按展示 ID(DMG-...)或数据库 UUID 解析许可证。
+// 管理 API 的 :id 参数兼容两种标识:列表返回的 id(UUID)与 license_id(DMG-...)都能查。
+func (s *LicenseService) resolveLicense(ctx context.Context, id string) (*model.License, error) {
+	l, err := s.repo.GetByLicenseID(ctx, id)
+	if err == nil {
+		return l, nil
+	}
+	if !errors.Is(err, ErrNotFound) {
+		return nil, err
+	}
+	return s.repo.GetByDBID(ctx, id)
+}
+
 // Get 按展示 ID 查询(附带最新修订 Key,用于导出)。
 func (s *LicenseService) Get(ctx context.Context, licenseID string) (*model.License, error) {
-	return s.repo.GetByLicenseID(ctx, licenseID)
+	return s.resolveLicense(ctx, licenseID)
 }
 
 // List 分页列表。
@@ -134,7 +147,7 @@ func (s *LicenseService) Extend(ctx context.Context, licenseID string, days int,
 	if days <= 0 {
 		return nil, errors.New("days must be positive")
 	}
-	l, err := s.repo.GetByLicenseID(ctx, licenseID)
+	l, err := s.resolveLicense(ctx, licenseID)
 	if err != nil {
 		return nil, err
 	}
@@ -178,7 +191,7 @@ func (s *LicenseService) Extend(ctx context.Context, licenseID string, days int,
 
 // Revoke 吊销(软删除,保留记录与修订)。
 func (s *LicenseService) Revoke(ctx context.Context, licenseID, reason, by, ip string) (*model.License, error) {
-	l, err := s.repo.GetByLicenseID(ctx, licenseID)
+	l, err := s.resolveLicense(ctx, licenseID)
 	if err != nil {
 		return nil, err
 	}
@@ -201,7 +214,7 @@ func (s *LicenseService) Revoke(ctx context.Context, licenseID, reason, by, ip s
 
 // Revisions 修订历史。
 func (s *LicenseService) Revisions(ctx context.Context, licenseID string) ([]*model.LicenseRevision, error) {
-	l, err := s.repo.GetByLicenseID(ctx, licenseID)
+	l, err := s.resolveLicense(ctx, licenseID)
 	if err != nil {
 		return nil, err
 	}

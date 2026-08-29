@@ -154,7 +154,7 @@ func (s *LicenseService) Verify(ctx context.Context, key, activationID, deviceID
 
 // ListActivations 某 License 的全部设备激活记录(管理端)。
 func (s *LicenseService) ListActivations(ctx context.Context, licenseID string) ([]*model.Activation, error) {
-	l, err := s.repo.GetByLicenseID(ctx, licenseID)
+	l, err := s.resolveLicense(ctx, licenseID)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			return nil, ErrLicenseNotFound
@@ -166,7 +166,7 @@ func (s *LicenseService) ListActivations(ctx context.Context, licenseID string) 
 
 // DeactivateActivation 管理端按激活记录 ID 单个解绑。
 func (s *LicenseService) DeactivateActivation(ctx context.Context, licenseID string, activationID int64, by, ip string) error {
-	l, err := s.repo.GetByLicenseID(ctx, licenseID)
+	l, err := s.resolveLicense(ctx, licenseID)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			return ErrLicenseNotFound
@@ -183,7 +183,7 @@ func (s *LicenseService) DeactivateActivation(ctx context.Context, licenseID str
 
 // ResetDevices 管理端重置某 License 全部设备(解绑所有激活)。
 func (s *LicenseService) ResetDevices(ctx context.Context, licenseID, by, ip string) (int, error) {
-	l, err := s.repo.GetByLicenseID(ctx, licenseID)
+	l, err := s.resolveLicense(ctx, licenseID)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
 			return 0, ErrLicenseNotFound

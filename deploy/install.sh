@@ -3,7 +3,7 @@
 # Docker Manager License — 一键部署脚本
 #
 # 一条命令部署:
-#   curl -fsSL https://raw.githubusercontent.com/MinimaxFlora/Docker_Manager_License/master/deploy/install.sh | bash
+#   curl -fsSL https://doc.kejizero.xyz/dml/install.sh | bash
 #
 # 特性:
 #   - 自动检测 Docker / Compose 环境
@@ -23,13 +23,12 @@ set -e
 INSTALL_DIR="${DML_DIR:-$HOME/docker-manager-license}"
 PORT="${DML_PORT:-3000}"
 FORCE="${DML_FORCE:-0}"
-REPO="MinimaxFlora/Docker_Manager_License"
-BRANCH="master"
+# 脚本与 compose 托管在公开站点(仓库为 private,raw 不可公开访问)
+SITE_BASE="${DML_SITE:-https://doc.kejizero.xyz/dml}"
 COMPOSE_URLS=(
-  "${DML_MIRROR:+$DML_MIRROR/}https://raw.githubusercontent.com/$REPO/$BRANCH/deploy/docker-compose.yml"
-  "${DML_MIRROR:+$DML_MIRROR/}https://github.com/$REPO/raw/refs/heads/$BRANCH/deploy/docker-compose.yml"
+  "$SITE_BASE/docker-compose.yml"
+  "${DML_MIRROR:+$DML_MIRROR/}https://raw.githubusercontent.com/MinimaxFlora/Docker_Manager_License/master/deploy/docker-compose.yml"
 )
-[ -n "$DML_MIRROR" ] && COMPOSE_URLS=("$DML_MIRROR/https://raw.githubusercontent.com/$REPO/$BRANCH/deploy/docker-compose.yml")
 
 c() { printf '\033[36m%s\033[0m\n' "$*"; }
 ok() { printf '\033[32m✓ %s\033[0m\n' "$*"; }

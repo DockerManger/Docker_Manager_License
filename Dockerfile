@@ -38,8 +38,9 @@ LABEL org.opencontainers.image.version=${VERSION}
 LABEL org.opencontainers.image.revision=${COMMIT}
 LABEL org.opencontainers.image.created=${BUILD_TIME}
 # nginx:反代 /license-api/ → 127.0.0.1:3000;postgresql16:内置数据库(仅监听 127.0.0.1)
+# postgresql16-client:提供 createdb/psql(Alpine 中服务器包不含客户端工具)
 # 单容器模式:用户只需 docker run -p 80:80 + 域名解析,无需宿主机 nginx
-RUN apk add --no-cache ca-certificates tini su-exec nginx postgresql16 \
+RUN apk add --no-cache ca-certificates tini su-exec nginx postgresql16 postgresql16-client \
     && addgroup -S license && adduser -S -G license license \
     && mkdir -p /run/nginx /private /data
 

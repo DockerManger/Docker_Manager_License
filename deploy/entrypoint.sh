@@ -11,10 +11,13 @@ PGDATA="${PGDATA:-/var/lib/postgresql}"
 PG_USER=postgres
 APP_USER=license
 
+# PostgreSQL 二进制目录(Alpine 3.20 postgresql16 包实际路径)
+PG_BIN="/usr/libexec/postgresql16"
+
 # 优雅停机:先停 PG(license-server 状态全在 PG,被 SIGKILL 也无妨)
 cleanup() {
     echo "==> [entrypoint] shutting down PostgreSQL..."
-    su-exec "$PG_USER" /usr/lib/postgresql/16/bin/pg_ctl -D "$PGDATA" -m fast stop >/dev/null 2>&1 || true
+    su-exec "$PG_USER" "$PG_BIN/pg_ctl" -D "$PGDATA" -m fast stop >/dev/null 2>&1 || true
 }
 trap cleanup TERM INT EXIT
 
@@ -38,15 +41,16 @@ if [ "$USE_INTERNAL_PG" = "1" ]; then
 
     if [ ! -f "$PGDATA/PG_VERSION" ]; then
         echo "==> [postgres] initializing data directory..."
-        su-exec "$PG_USER" /usr/lib/postgresql/16/bin/initdb -D "$PGDATA" -U postgres --auth=trust
+        # --locale=C:Alpine 无完整 locale 环境,避免 initdb 因 locale 缺失失败
+        su-exec "$PG_USER" "$PG_BIN/initdb" -D "$PGDATA" -U postgres --auth=trust --locale=C
     fi
 
     echo "==> [postgres] starting on 127.0.0.1:5432..."
-    su-exec "$PG_USER" /usr/lib/postgresql/16/bin/pg_ctl -D "$PGDATA" \
+    su-exec "$PG_USER" "$PG_BIN/pg_ctl" -D "$PGDATA" \
         -o "-c listen_addresses=127.0.0.1 -c port=5432" -w start
 
     # 确保 license 数据库存在(幂等)
-    su-exec "$PG_USER" /usr/lib/postgresql/16/bin/createdb -h 127.0.0.1 -U postgres license 2>/dev/null || true
+    su-exec "$PG_USER" "$PG_BIN/createdb" -h 127.0.0.1 -U postgres license 2>/dev/null || true
     export DATABASE_URL="postgres://postgres@127.0.0.1:5432/license?sslmode=disable"
 else
     echo "==> [postgres] using external PostgreSQL (DATABASE_URL provided)"

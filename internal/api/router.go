@@ -18,7 +18,9 @@ import (
 //   - /api/v1/admin/*            管理 API(全部需要 JWT 认证)
 //
 // 对外规范 Base URL(生产固定):
-//   https://manager.kejizero.xyz/license-api
+//
+//	https://manager.kejizero.xyz/license-api
+//
 // 客户端请求 = Base + "/api/v1/public/activate|verify|deactivate"
 // 反代(Caddy/nginx)负责剥离 /license-api 前缀。
 //

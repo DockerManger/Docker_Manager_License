@@ -3,7 +3,7 @@
 # Docker Manager License — 一键部署脚本(Compose 单容器全包)
 #
 # 一条命令部署(仓库已公开):
-#   curl -fsSL https://github.com/MinimaxFlora/Docker_Manager_License/raw/refs/heads/master/deploy/install.sh | bash
+#   curl -fsSL https://github.com/DockerManger/Docker_Manager_License/raw/refs/heads/master/deploy/install.sh | bash
 #
 # 等价于:
 #   docker compose up -d
@@ -34,11 +34,11 @@ FORCE="${DML_FORCE:-0}"
 MIRROR="${DML_MIRROR:-}"
 IMAGE="zhaoweiwen123/docker_manager_license:latest"
 # 仓库已公开,compose 直接从 GitHub 拉取;优先 github.com raw 端点(绕过 raw CDN 滞后)
-GH_RAW="https://github.com/MinimaxFlora/Docker_Manager_License/raw/refs/heads/master/deploy/docker-compose.yml"
+GH_RAW="https://github.com/DockerManger/Docker_Manager_License/raw/refs/heads/master/deploy/docker-compose.yml"
 COMPOSE_URLS=(
   "${DML_MIRROR:+$DML_MIRROR/}$GH_RAW"
   "$GH_RAW"
-  "https://raw.githubusercontent.com/MinimaxFlora/Docker_Manager_License/master/deploy/docker-compose.yml"
+  "https://raw.githubusercontent.com/DockerManger/Docker_Manager_License/master/deploy/docker-compose.yml"
 )
 
 c() { printf '\033[36m%s\033[0m\n' "$*"; }

@@ -1,4 +1,4 @@
-module github.com/MinimaxFlora/Docker_Manager_License
+module github.com/DockerManger/Docker_Manager_License
 
 go 1.27.0
 

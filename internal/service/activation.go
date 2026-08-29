@@ -7,9 +7,9 @@ import (
 	"errors"
 	"time"
 
-	"github.com/MinimaxFlora/Docker_Manager_License/internal/crypto"
-	"github.com/MinimaxFlora/Docker_Manager_License/internal/license"
-	"github.com/MinimaxFlora/Docker_Manager_License/internal/model"
+	"github.com/DockerManger/Docker_Manager_License/internal/crypto"
+	"github.com/DockerManger/Docker_Manager_License/internal/license"
+	"github.com/DockerManger/Docker_Manager_License/internal/model"
 )
 
 // NextVerifyAfter 客户端建议的下次验证间隔(秒)。配合客户端本地 Grace Period 使用。

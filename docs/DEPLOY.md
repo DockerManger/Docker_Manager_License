@@ -20,7 +20,7 @@
 SSH 登录服务器后,执行:
 
 ```bash
-curl -fsSL https://github.com/MinimaxFlora/Docker_Manager_License/raw/refs/heads/master/deploy/install.sh | bash
+curl -fsSL https://github.com/DockerManger/Docker_Manager_License/raw/refs/heads/master/deploy/install.sh | bash
 ```
 
 等它打印出「✓ 部署完成」之类的字样。它会自动:

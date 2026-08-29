@@ -1,6 +1,6 @@
 # Docker Manager License
 
-> [Docker_Manager_Go](https://github.com/MinimaxFlora/Docker_Manager_Go) 的官方 License 签发、管理与授权服务端。
+> [Docker_Manager_Go](https://github.com/DockerManger/Docker_Manager_Go) 的官方 License 签发、管理与授权服务端。
 
 ```
 Docker_Manager_License          Docker_Manager_Go (开源)
@@ -73,14 +73,14 @@ payload = {
 ### 一键部署(推荐)
 
 ```bash
-curl -fsSL https://github.com/MinimaxFlora/Docker_Manager_License/raw/refs/heads/master/deploy/install.sh | bash
+curl -fsSL https://github.com/DockerManger/Docker_Manager_License/raw/refs/heads/master/deploy/install.sh | bash
 ```
 
 脚本自动:检测环境 → 创建部署目录(`~/docker-manager-license`)→ 下载 compose → 拉镜像 → 启动 → 打印管理员账号/密码/公钥。
 
 可选参数(环境变量):
 ```bash
-DML_DIR=~/dml DML_PORT=8080 curl -fsSL https://github.com/MinimaxFlora/Docker_Manager_License/raw/refs/heads/master/deploy/install.sh | bash
+DML_DIR=~/dml DML_PORT=8080 curl -fsSL https://github.com/DockerManger/Docker_Manager_License/raw/refs/heads/master/deploy/install.sh | bash
 # 国内网络加速: DML_MIRROR=https://docker.m.daocloud.io ...
 # 重新部署: DML_FORCE=1 ...
 ```

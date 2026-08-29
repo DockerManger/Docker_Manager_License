@@ -7,7 +7,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/MinimaxFlora/Docker_Manager_License/web"
+	"github.com/DockerManger/Docker_Manager_License/web"
 )
 
 // Router 注册全部路由。

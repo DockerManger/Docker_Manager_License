@@ -19,8 +19,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/MinimaxFlora/Docker_Manager_License/internal/crypto"
-	"github.com/MinimaxFlora/Docker_Manager_License/internal/license"
+	"github.com/DockerManger/Docker_Manager_License/internal/crypto"
+	"github.com/DockerManger/Docker_Manager_License/internal/license"
 )
 
 func ed25519Verify(pub, msg, sig []byte) bool {

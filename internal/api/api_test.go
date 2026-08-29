@@ -15,11 +15,11 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/MinimaxFlora/Docker_Manager_License/internal/auth"
-	"github.com/MinimaxFlora/Docker_Manager_License/internal/crypto"
-	"github.com/MinimaxFlora/Docker_Manager_License/internal/database"
-	"github.com/MinimaxFlora/Docker_Manager_License/internal/license"
-	"github.com/MinimaxFlora/Docker_Manager_License/internal/service"
+	"github.com/DockerManger/Docker_Manager_License/internal/auth"
+	"github.com/DockerManger/Docker_Manager_License/internal/crypto"
+	"github.com/DockerManger/Docker_Manager_License/internal/database"
+	"github.com/DockerManger/Docker_Manager_License/internal/license"
+	"github.com/DockerManger/Docker_Manager_License/internal/service"
 )
 
 // 集成测试需要真实 PostgreSQL:

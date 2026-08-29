@@ -24,12 +24,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/MinimaxFlora/Docker_Manager_License/internal/api"
-	"github.com/MinimaxFlora/Docker_Manager_License/internal/auth"
-	"github.com/MinimaxFlora/Docker_Manager_License/internal/config"
-	"github.com/MinimaxFlora/Docker_Manager_License/internal/crypto"
-	"github.com/MinimaxFlora/Docker_Manager_License/internal/database"
-	"github.com/MinimaxFlora/Docker_Manager_License/internal/service"
+	"github.com/DockerManger/Docker_Manager_License/internal/api"
+	"github.com/DockerManger/Docker_Manager_License/internal/auth"
+	"github.com/DockerManger/Docker_Manager_License/internal/config"
+	"github.com/DockerManger/Docker_Manager_License/internal/crypto"
+	"github.com/DockerManger/Docker_Manager_License/internal/database"
+	"github.com/DockerManger/Docker_Manager_License/internal/service"
 )
 
 // 构建信息:发布时由 ldflags 注入(Dockerfile/Makefile 的 -X 参数对应),

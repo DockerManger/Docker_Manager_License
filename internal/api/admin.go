@@ -7,8 +7,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/MinimaxFlora/Docker_Manager_License/internal/auth"
-	"github.com/MinimaxFlora/Docker_Manager_License/internal/model"
+	"github.com/DockerManger/Docker_Manager_License/internal/auth"
+	"github.com/DockerManger/Docker_Manager_License/internal/model"
 )
 
 // ---------- 登录 ----------

@@ -6,8 +6,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/MinimaxFlora/Docker_Manager_License/internal/auth"
-	"github.com/MinimaxFlora/Docker_Manager_License/internal/service"
+	"github.com/DockerManger/Docker_Manager_License/internal/auth"
+	"github.com/DockerManger/Docker_Manager_License/internal/service"
 )
 
 // Deps API 依赖集合(构造时注入)。

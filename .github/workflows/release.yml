@@ -46,6 +46,10 @@ jobs:
         with:
           go-version-file: go.mod
 
+      # web/embed.go 的 go:embed all:dist 需要目录存在(dist 不入库,CI 占位)
+      - name: Prepare web/dist placeholder
+        run: mkdir -p web/dist && touch web/dist/.gitkeep
+
       - name: Build linux/${{ matrix.arch }}
         run: |
           CGO_ENABLED=0 GOOS=linux GOARCH=${{ matrix.arch }} go build -trimpath \

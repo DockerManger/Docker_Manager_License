@@ -58,7 +58,7 @@ func usage() {
   JWT_SECRET                必填,管理端 JWT 签名密钥
   LICENSE_KEY_ID            必填,当前签发密钥标识(如 2026-01)
   LICENSE_PRIVATE_KEY_PATH  私钥路径(默认 private/license.key)
-  SERVER_ADDR               监听地址(默认 :8080)
+  SERVER_ADDR               监听地址(默认 :3000)
   JWT_TTL                   JWT 有效期(默认 12h)
   ADMIN_USERNAME            首次初始化管理员用户名
   ADMIN_PASSWORD            首次初始化管理员密码(仅首次生效)

@@ -45,10 +45,10 @@ RUN mkdir -p /private /data \
     && chown -R license:license /private /data
 
 USER license
-ENV SERVER_ADDR=:8080
+ENV SERVER_ADDR=:3000
 ENV LICENSE_PRIVATE_KEY_PATH=/private/license.key
 VOLUME ["/private", "/data"]
-EXPOSE 8080
+EXPOSE 3000
 
 ENTRYPOINT ["/sbin/tini", "--"]
 CMD ["license-server"]

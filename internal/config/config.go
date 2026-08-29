@@ -13,7 +13,7 @@ import (
 
 // Config 服务端配置。
 type Config struct {
-	ServerAddr  string // 监听地址,默认 :8080
+	ServerAddr  string // 监听地址,默认 :3000
 	DatabaseURL string // PostgreSQL DSN
 	JWTSecret   string // HS256 签名密钥(管理端 JWT)
 	JWTTTL      time.Duration
@@ -31,7 +31,7 @@ type Config struct {
 // Load 从环境变量加载配置。requireSecrets=true 时校验 JWT_SECRET(生产/服务模式)。
 func Load() (*Config, error) {
 	c := &Config{
-		ServerAddr:         envOr("SERVER_ADDR", ":8080"),
+		ServerAddr:         envOr("SERVER_ADDR", ":3000"),
 		DatabaseURL:        os.Getenv("DATABASE_URL"),
 		JWTSecret:          os.Getenv("JWT_SECRET"),
 		JWTTTL:             envDur("JWT_TTL", 12*time.Hour),

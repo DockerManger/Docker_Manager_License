@@ -87,7 +87,7 @@ cd web && npm install
 export DATABASE_URL=postgres://license:licensepass@localhost:5432/license?sslmode=disable
 
 # 运行
-make run          # 完整构建(web + backend)并启动 :8080
+make run          # 完整构建(web + backend)并启动 :3000
 
 # 或分开
 make web          # 前端 → web/dist
@@ -102,7 +102,7 @@ make backend      # 后端 → license-server
 | `JWT_SECRET` | ✅ | JWT 签名密钥(≥32 字符随机) |
 | `LICENSE_KEY_ID` | ✅ | 当前签发密钥标识(如 `2026-01`) |
 | `LICENSE_PRIVATE_KEY_PATH` | | 私钥路径,默认 `private/license.key` |
-| `SERVER_ADDR` | | 监听地址,默认 `:8080` |
+| `SERVER_ADDR` | | 监听地址,默认 `:3000` |
 | `JWT_TTL` | | JWT 有效期,默认 `12h` |
 | `ADMIN_USERNAME` / `ADMIN_PASSWORD` | 首次 | 初始化管理员(仅首次生效) |
 

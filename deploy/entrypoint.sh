@@ -38,6 +38,9 @@ fi
 if [ "$USE_INTERNAL_PG" = "1" ]; then
     mkdir -p "$PGDATA"
     chown -R "$PG_USER:$PG_USER" "$PGDATA"
+    # PG 默认把 unix socket 锁文件写到 /run/postgresql,Alpine 容器内该目录不存在
+    mkdir -p /run/postgresql
+    chown "$PG_USER:$PG_USER" /run/postgresql
 
     if [ ! -f "$PGDATA/PG_VERSION" ]; then
         echo "==> [postgres] initializing data directory..."

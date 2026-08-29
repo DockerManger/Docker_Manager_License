@@ -3,7 +3,7 @@
 # Docker Manager License — 一键部署脚本
 #
 # 一条命令部署(仓库已公开,直接走 GitHub raw):
-#   curl -fsSL https://raw.githubusercontent.com/MinimaxFlora/Docker_Manager_License/master/deploy/install.sh | bash
+#   curl -fsSL https://github.com/MinimaxFlora/Docker_Manager_License/raw/refs/heads/master/deploy/install.sh | bash
 #
 # 特性:
 #   - 自动检测 Docker / Compose 环境
@@ -29,9 +29,12 @@ PORT="${DML_PORT:-3000}"
 FORCE="${DML_FORCE:-0}"
 DOMAIN="${DML_DOMAIN:-}"
 DO_NGINX="${DML_NGINX:-1}"
-# 仓库已公开,compose 直接从 GitHub raw 拉取;DML_MIRROR 提供国内加速前缀
+# 仓库已公开,compose 直接从 GitHub 拉取;优先 github.com raw 端点(绕过 raw CDN 滞后),
+# raw.githubusercontent.com 兜底;DML_MIRROR 提供国内加速前缀
+GH_RAW="https://github.com/MinimaxFlora/Docker_Manager_License/raw/refs/heads/master/deploy/docker-compose.yml"
 COMPOSE_URLS=(
-  "${DML_MIRROR:+$DML_MIRROR/}https://raw.githubusercontent.com/MinimaxFlora/Docker_Manager_License/master/deploy/docker-compose.yml"
+  "${DML_MIRROR:+$DML_MIRROR/}$GH_RAW"
+  "$GH_RAW"
   "https://raw.githubusercontent.com/MinimaxFlora/Docker_Manager_License/master/deploy/docker-compose.yml"
 )
 

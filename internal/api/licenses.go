@@ -14,13 +14,15 @@ import (
 // ---------- 签发 ----------
 
 type issueLicenseRequest struct {
-	Customer   string   `json:"customer"`
-	Plan       string   `json:"plan"`
-	Features   []string `json:"features"`
-	ExpiresAt  int64    `json:"expires_at"`            // Unix 秒
-	ExpireDays int      `json:"expire_days,omitempty"` // 便捷:相对天数(与 expires_at 二选一)
-	MaxDevices int      `json:"max_devices"`
-	Notes      string   `json:"notes"`
+	Customer       string   `json:"customer"`
+	CustomerID     string   `json:"customer_id,omitempty"`     // V3:CUS-*,可选
+	SubscriptionID string   `json:"subscription_id,omitempty"` // V3:SUB-*,可选
+	Plan           string   `json:"plan"`
+	Features       []string `json:"features"`
+	ExpiresAt      int64    `json:"expires_at"`            // Unix 秒
+	ExpireDays     int      `json:"expire_days,omitempty"` // 便捷:相对天数(与 expires_at 二选一)
+	MaxDevices     int      `json:"max_devices"`
+	Notes          string   `json:"notes"`
 }
 
 // adminIssueLicense POST /api/v1/admin/licenses
@@ -35,14 +37,16 @@ func adminIssueLicense(d *Deps) gin.HandlerFunc {
 			req.ExpiresAt = service.Now() + int64(req.ExpireDays)*86400
 		}
 		res, err := d.LicenseSvc.Issue(c.Request.Context(), service.IssueRequest{
-			Customer:   strings.TrimSpace(req.Customer),
-			Plan:       req.Plan,
-			Features:   req.Features,
-			ExpiresAt:  req.ExpiresAt,
-			MaxDevices: req.MaxDevices,
-			Notes:      req.Notes,
-			CreatedBy:  c.GetString(ctxAdminKey),
-			IP:         clientIP(c),
+			Customer:       strings.TrimSpace(req.Customer),
+			CustomerID:     strings.TrimSpace(req.CustomerID),
+			SubscriptionID: strings.TrimSpace(req.SubscriptionID),
+			Plan:           req.Plan,
+			Features:       req.Features,
+			ExpiresAt:      req.ExpiresAt,
+			MaxDevices:     req.MaxDevices,
+			Notes:          req.Notes,
+			CreatedBy:      c.GetString(ctxAdminKey),
+			IP:             clientIP(c),
 		})
 		if err != nil {
 			handleError(c, err)

@@ -36,6 +36,14 @@ jobs:
         with:
           node-version: 22
 
+      - name: Prepare web embed placeholder
+        # web/embed.go 用 go:embed all:dist 嵌入前端;Go 检查不需要真实 dist,
+        # 但 embed 模式要求目录存在且至少一个匹配文件,否则 vet/build 报
+        # "pattern all:dist: no matching files found"
+        run: |
+          mkdir -p web/dist
+          touch web/dist/.gitkeep
+
       - name: gofmt check
         run: |
           unformatted=$(gofmt -l .)

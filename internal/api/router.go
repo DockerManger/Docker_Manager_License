@@ -91,6 +91,8 @@ func serveFromDist(c *gin.Context, distFS fs.FS, name string) {
 		name = "index.html"
 	}
 	if raw, err := fs.ReadFile(distFS, name); err == nil {
+		// 与 vite preview 一致:no-cache 防止浏览器启发式缓存旧版本资源
+		c.Header("Cache-Control", "no-cache")
 		c.Data(http.StatusOK, contentType(name), raw)
 		return
 	}
@@ -100,17 +102,18 @@ func serveFromDist(c *gin.Context, distFS fs.FS, name string) {
 		c.String(http.StatusNotFound, "not found")
 		return
 	}
+	c.Header("Cache-Control", "no-cache")
 	c.Data(http.StatusOK, "text/html; charset=utf-8", raw)
 }
 
 func contentType(name string) string {
 	switch {
 	case strings.HasSuffix(name, ".js"):
-		return "text/javascript; charset=utf-8"
+		return "text/javascript"
 	case strings.HasSuffix(name, ".css"):
-		return "text/css; charset=utf-8"
+		return "text/css"
 	case strings.HasSuffix(name, ".html"):
-		return "text/html; charset=utf-8"
+		return "text/html"
 	case strings.HasSuffix(name, ".svg"):
 		return "image/svg+xml"
 	case strings.HasSuffix(name, ".png"):

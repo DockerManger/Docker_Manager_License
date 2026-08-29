@@ -41,7 +41,14 @@ func testDeps(t *testing.T) (*Deps, func()) {
 		t.Fatalf("migrate: %v", err)
 	}
 	// 清空测试数据(保留 schema)
-	for _, tbl := range []string{"security_nonces", "activation_tokens", "security_events", "subscriptions", "customers", "audit_logs", "activations", "license_revisions", "licenses", "admins", "signing_keys"} {
+	// 顺序必须遵循外键:先删引用者(license_revisions/activations → licenses),
+	// 再删被引用者(subscriptions/customers),否则 FK 约束报错。
+	for _, tbl := range []string{
+		"security_nonces", "activation_tokens", "security_events",
+		"license_revisions", "activations", "licenses",
+		"subscriptions", "customers",
+		"audit_logs", "admins", "signing_keys",
+	} {
 		if _, err := pool.Exec(ctx, "DELETE FROM "+tbl); err != nil {
 			t.Fatalf("clean %s: %v", tbl, err)
 		}

@@ -114,11 +114,12 @@ func scanLicense(row pgx.Row) (*model.License, error) {
 }
 
 // Create 创建 License 主记录(customerRef/subscriptionRef 可空,关联 V3 表)。
+// 参数类型用 ::uuid 显式转换:NULLIF 与 '' 比较会让 PG 推断为 text,插 uuid 列报 42804。
 func (r *LicenseRepo) Create(ctx context.Context, l *model.License, customerRef, subscriptionRef string) error {
 	return r.pool.QueryRow(ctx, `
 		INSERT INTO licenses (license_id, key_id, product, plan, features, customer,
 			customer_ref, subscription_id, issued_at, expires_at, max_devices, status, notes)
-		VALUES ($1,$2,$3,$4,$5,$6,NULLIF($7,''),NULLIF($8,''),$9,$10,$11,$12,$13)
+		VALUES ($1,$2,$3,$4,$5,$6,NULLIF($7,'')::uuid,NULLIF($8,'')::uuid,$9,$10,$11,$12,$13)
 		RETURNING id, created_at, updated_at`,
 		l.LicenseID, l.KeyID, l.Product, l.Plan, l.Features, l.Customer,
 		customerRef, subscriptionRef,

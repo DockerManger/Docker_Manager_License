@@ -13,7 +13,7 @@
 # ============================================================
 services:
   license-server:
-    image: ghcr.io/minimaxflora/docker-manager-license:latest
+    image: zhaoweiwen123/docker_manager_license:latest
     container_name: docker-manager-license
     restart: unless-stopped
     ports:

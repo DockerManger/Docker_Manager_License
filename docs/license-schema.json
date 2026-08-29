@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://manager.kejizero.xyz/license-api/docs/license-schema.json",
+  "title": "Docker Manager License V2 Contract (V2.1)",
+  "description": "License Key 签名载荷规范。Docker_Manager_License(签发端)与 Docker_Manager_Go(消费端)之间唯一的正式契约。V1(HMAC)已完全移除,只接受 V2 Ed25519。",
+  "type": "object",
+  "required": [
+    "version",
+    "key_id",
+    "license_id",
+    "product",
+    "plan",
+    "customer",
+    "issued_at",
+    "expires_at",
+    "max_devices"
+  ],
+  "properties": {
+    "version": {
+      "type": "integer",
+      "const": 2,
+      "description": "契约版本。必须为 2;未知版本必须拒绝(UNSUPPORTED_LICENSE_VERSION),不得静默接受。"
+    },
+    "key_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "签发密钥标识(轮换支持),如 2026-01。消费端按此从内置公钥注册表取公钥验签;未知 key_id 拒绝。"
+    },
+    "license_id": {
+      "type": "string",
+      "pattern": "^DMG-[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "全局唯一展示 ID(客服查询凭据)。"
+    },
+    "product": {
+      "type": "string",
+      "const": "docker-manager-go",
+      "description": "目标产品,不匹配直接拒绝。"
+    },
+    "plan": {
+      "type": "string",
+      "enum": ["pro"],
+      "description": "套餐。必须属于签发端 PlanRegistry 且 Enabled。free 不需要 License;business/enterprise 预留(相关 feature 落地后启用)。"
+    },
+    "features": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["compose", "container_create", "appstore"]
+      },
+      "uniqueItems": true,
+      "default": [],
+      "description": "FeatureRegistry 子集。未知 feature 必须拒绝。规划中(未注册):terminal/backup/monitor/multi_node/api/automation。"
+    },
+    "customer": {
+      "type": "string",
+      "minLength": 1,
+      "description": "客户名(展示用)。"
+    },
+    "customer_id": {
+      "type": "string",
+      "pattern": "^CUS-[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "V2.1 新增(可选):customers 表 customer_id 关联。存量 V2 Key 无此字段仍有效。"
+    },
+    "subscription_id": {
+      "type": "string",
+      "pattern": "^SUB-[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "V2.1 新增(可选):subscriptions 表 subscription_id 关联。存量 V2 Key 无此字段仍有效。"
+    },
+    "issued_at": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "签发时间(Unix 秒)。必须 <= expires_at。"
+    },
+    "expires_at": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "过期时间(Unix 秒);expires_at < 当前时间 → expired。"
+    },
+    "max_devices": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "允许绑定的活跃设备数。"
+    }
+  },
+  "additionalProperties": false
+}

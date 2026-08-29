@@ -80,6 +80,16 @@ func Router(d *Deps) *gin.Engine {
 		authed.GET("/signing-keys", adminListSigningKeys(d))
 
 		authed.GET("/audit-logs", adminAuditLogs(d))
+
+		// ---------- V3:客户 / 订阅 / 安全事件 / 服务器配置 ----------
+		authed.POST("/customers", adminCreateCustomer(d))
+		authed.GET("/customers", adminListCustomers(d))
+		authed.POST("/subscriptions", adminCreateSubscription(d))
+		authed.GET("/subscriptions", adminListSubscriptions(d))
+		authed.POST("/subscriptions/:id/status", adminUpdateSubscriptionStatus(d))
+		authed.GET("/security-events", adminSecurityEvents(d))
+		authed.GET("/settings", adminSettings(d))
+		authed.PUT("/settings", adminUpdateSettings(d))
 	}
 
 	// ---------- 前端(单二进制嵌入) ----------

@@ -1,8 +1,10 @@
-# Docker_Manager_Go 集成文档（License V2 契约）
+# Docker_Manager_Go 集成文档(License V2.1 / V3 架构契约)
 
-> 本文档是 **Docker_Manager_License（签发端）** 与 **Docker_Manager_Go（消费端）** 之间唯一的正式契约。
-> 任何一方的修改必须同步另一方，否则授权失效。本仓库 `internal/integration/consumer_test.go`
-> 用独立实现模拟了消费端验证逻辑，改造 Docker_Manager_Go 时以此为准。
+> 本文档是 **Docker_Manager_License(签发端)** 与 **Docker_Manager_Go(消费端)** 之间唯一的正式契约。
+> 任何一方的修改必须同步另一方,否则授权失效。本仓库 `internal/integration/consumer_test.go`
+> 用独立实现模拟了消费端验证逻辑,改造 Docker_Manager_Go 时以此为准。
+>
+> 机器可读契约:`docs/license-schema.json`(payload 校验);`docs/openapi.yaml`(API 描述)。
 
 ---
 
@@ -11,24 +13,27 @@
 ```
 Docker_Manager_License                    Docker_Manager_Go (开源)
         │                                        │
-   Ed25519 私钥                                 Ed25519 公钥(内嵌)
+   Ed25519 私钥                                 Ed25519 公钥(内嵌,key_id 注册表)
         │                                        │
    签发 Key 字符串                              Parse → Verify → Expiry → Feature
         │                                        │
-        └──────── license.json ─────────────────┘
-                 (离线,无需联网)
+        └────── License Key(仅首次激活)─────────┘
+        └────── Activation Token(运行期验证)─────┘
+                 (token 数据库只存 SHA-256 hash)
 ```
 
-**安全模型**：
-- 攻击者拿到 Docker_Manager_Go 全部源码 → 只能看到公钥，**不能生成合法 License**
-- 攻击者拿到 License 文件 → 不能修改有效期/features/max_devices（签名失效）
-- 攻击者复制 License → 离线模式由 max_devices/本地绑定规则约束
+**安全模型**:
+- 攻击者拿到 Docker_Manager_Go 全部源码 → 只能看到公钥,**不能生成合法 License**
+- 攻击者拿到 License 文件 → 不能修改有效期/features/max_devices(签名失效)
+- 攻击者复制 License → 只能激活 max_devices 台设备(服务端权威计数)
+- **V1(HMAC)已完全移除**:不再保留 V1/V2 双轨,消费端只接受 V2 Ed25519;
+  存量 V1 Key 无法激活,需重新签发
 
 ---
 
 ## 1.5 对外 API Base URL(唯一规范)
 
-生产环境固定唯一 Base URL(规格书 §22,禁止多套前缀):
+生产环境固定唯一 Base URL(禁止多套前缀):
 
 ```
 https://manager.kejizero.xyz/license-api
@@ -44,14 +49,11 @@ https://manager.kejizero.xyz/license-api
 | 健康检查 | `https://manager.kejizero.xyz/license-api/health` | `/health`(别名 `/healthz` 兼容) |
 | 管理后台 | `https://manager.kejizero.xyz/`(SPA) | 前端 + `/api/v1/admin/*` |
 
-**前缀剥离**:Caddy 反代配置 `uri strip_prefix /license-api` 后转发到
-license-server 容器(`license-server:3000`),license-server 内部**没有**
-`/license-api` 前缀——所有内部路由以 `/api/v1/...` 开头。
+**前缀剥离**:反代配置 `uri strip_prefix /license-api` 后转发到 license-server 容器,
+license-server 内部**没有** `/license-api` 前缀——所有内部路由以 `/api/v1/...` 开头。
 
 开发/私有部署可用环境变量 `DM_LICENSE_SERVER_URL` 覆盖客户端地址;
 License Server 侧 `SERVER_ADDR` 控制监听(默认 `:3000`)。
-
-
 
 ---
 
@@ -61,20 +63,19 @@ License Server 侧 `SERVER_ADDR` 控制监听(默认 `:3000`)。
 <base64url(规范JSON payload)>.<base64url(Ed25519签名 64 字节)>
 ```
 
-示例（结构）：
+示例(结构):
 ```
-eyJ2ZXJzaW9uIjoyLCJrZXlfaWQiOiIyMDI2LTAxIiwibGljZW5zZV9pZCI6IkRNRy0wMUowMDAw...}.<88位签名>
+eyJ2ZX...MDAw...}.<88位签名>
 ```
 
-**V1 已彻底删除**(规格书 §31):V1 HMAC 验证路径、`licenseSecret`、`LicenseSign`
-已从 Docker_Manager_Go 移除,不再保留 V1/V2 双协议。消费端只接受 V2(Ed25519)。
-存量 V1 Key 无法激活,需重新签发 V2 License。
+**V1 已彻底删除**:V1 HMAC 验证路径、`licenseSecret`、`LicenseSign` 已从 Docker_Manager_Go
+移除,不保留 V1/V2 双协议。消费端只接受 V2(Ed25519)。存量 V1 Key 无法激活,需重新签发 V2 License。
 
 ---
 
-## 3. Payload 规范（V2）
+## 3. Payload 规范(V2.1)
 
-字段顺序即规范 JSON 序列化顺序（Go struct 字段序），**签名覆盖完整 payload 字节**。
+字段顺序即规范 JSON 序列化顺序(Go struct 字段序),**签名覆盖完整 payload 字节**。
 
 ```json
 {
@@ -85,6 +86,8 @@ eyJ2ZXJzaW9uIjoyLCJrZXlfaWQiOiIyMDI2LTAxIiwibGljZW5zZV9pZCI6IkRNRy0wMUowMDAw...}
   "plan": "pro",
   "features": ["compose", "container_create", "appstore"],
   "customer": "Zhao",
+  "customer_id": "CUS-01JXXXXXXXXXXXX",
+  "subscription_id": "SUB-01JXXXXXXXXXXXX",
   "issued_at": 1777392000,
   "expires_at": 1808928000,
   "max_devices": 3
@@ -93,193 +96,257 @@ eyJ2ZXJzaW9uIjoyLCJrZXlfaWQiOiIyMDI2LTAxIiwibGljZW5zZV9pZCI6IkRNRy0wMUowMDAw...}
 
 | 字段 | 类型 | 说明 |
 |---|---|---|
-| `version` | int | 必须为 `2`；遇到更高版本必须拒绝（`UNSUPPORTED_LICENSE_VERSION`），不得静默接受 |
-| `key_id` | string | 签发密钥标识（轮换/泄露处理用），如 `2026-01` |
-| `license_id` | string | 全局唯一展示 ID（客服查询凭据），前缀 `DMG-` |
-| `product` | string | 固定 `docker-manager-go`，不符直接拒绝 |
-| `plan` | string | `pro`（第一版；`free` 不需要 License） |
-| `features` | string[] | Feature Registry 子集（见下） |
-| `customer` | string | 客户名 |
-| `issued_at` / `expires_at` | int64 | Unix 秒；`expires_at < now` → expired |
-| `max_devices` | int | 允许绑定设备数（第一版消费端单机绑定语义，>=1） |
+| `version` | int | 必须为 `2`;遇到更高版本必须拒绝(`UNSUPPORTED_LICENSE_VERSION`),不得静默接受 |
+| `key_id` | string | 签发密钥标识(轮换/泄露处理用),如 `2026-01`;未知 key_id 拒绝(`UNSUPPORTED_KEY`) |
+| `license_id` | string | 全局唯一展示 ID(客服查询凭据),前缀 `DMG-` |
+| `product` | string | 固定 `docker-manager-go`,不符直接拒绝 |
+| `plan` | string | `pro`(当前唯一可签发套餐;`free` 不需要 License;business/enterprise 预留) |
+| `features` | string[] | Feature Registry 子集(见 §4);未知 feature 拒绝 |
+| `customer` | string | 客户名(展示用) |
+| `customer_id` | string | **V2.1 新增(可选)**:customers 表 `CUS-*` 关联。存量 V2 Key 无此字段仍有效 |
+| `subscription_id` | string | **V2.1 新增(可选)**:subscriptions 表 `SUB-*` 关联。存量 V2 Key 无此字段仍有效 |
+| `issued_at` / `expires_at` | int64 | Unix 秒;`expires_at < now` → expired;`issued_at > expires_at` 非法 |
+| `max_devices` | int | 允许绑定设备数(>=1) |
 
-## 4. Feature Registry（两端必须逐字一致）
+> **兼容性承诺**:V2.1 只新增可选字段,不改变已有字段语义与签名顺序。
+> 消费端 JSON 解析天然忽略未知字段;存量 V2 Key(无 customer_id/subscription_id)继续有效。
+
+---
+
+## 4. Feature Registry(两端必须逐字一致)
 
 | Feature | Docker_Manager_Go 门控点 |
 |---|---|
-| `compose` | `internal/service/compose.go` 部署入口（现 `license.required` 403） |
+| `compose` | `internal/service/compose.go` 部署入口(`license.required` 403) |
 | `container_create` | `internal/service/container.go` 创建入口 |
 | `appstore` | `internal/service/appstore.go` 安装入口 |
 
-> ⚠️ 严禁两端各自起名（如 `advanced-compose` vs `compose_advanced`）。新增 Feature 必须先改本 Registry + 本仓库 `internal/license/format.go`，再同步消费端。
+> ⚠️ 严禁两端各自起名(如 `advanced-compose` vs `compose_advanced`)。
+> 新增 Feature 必须先改本 Registry + 本仓库 `internal/license/format.go`(FeatureRegistry),
+> 再同步消费端。规划中(未注册,不可签发):`terminal` / `backup` / `monitor` /
+> `multi_node` / `api` / `automation`。
+
+## 4.1 Plan Registry(统一套餐注册表)
+
+| Plan | Features | 状态 |
+|---|---|---|
+| `free` | 无(不需要 License) | 不可签发 |
+| `pro` | compose + container_create + appstore | ✅ 可签发 |
+| `business` | pro + multi_node + api | 预留(feature 落地后启用) |
+| `enterprise` | business + audit + sso | 预留 |
+
+套餐逻辑集中在 `internal/license/format.go` 的 `PlanRegistry`,严禁散落在业务代码。
+签发校验:`plan ∈ EnabledPlanNames` 且 `features ⊆ FeatureRegistry`。
 
 ---
 
-## 5. Docker_Manager_Go 改造清单
+## 5. Docker_Manager_Go 改造清单(V3)
 
-基于对当前源码（`internal/service/license.go` 为 HMAC v1）的调研，正式接入 V2 需要修改以下文件：
+基于 V3 架构(2026-08),消费端已实现:
 
-### 5.1 `internal/service/license.go`（核心）
+### 5.1 `internal/service/license.go`
 
-```go
-// 1. 新增 V2 公钥常量(由 License Server 提供,key_id → 公钥映射)
-var licensePublicKeys = map[string]ed25519.PublicKey{
-    "2026-01": mustDecodePubKey(`-----BEGIN PUBLIC KEY-----
-...（部署时由签发端 keygen 输出）
------END PUBLIC KEY-----`),
-}
+- 公钥注册表 `licensePublicKeys`(key_id → PEM);未知 key_id 拒绝
+- `LicenseVerifyKey` 唯一 V2 路径(无 V1 分派);严格校验:
+  version==2 / product / plan / features ⊆ Registry / issued_at / expires_at / max_devices
+- `LicenseFeatureActive(st, feature)` 功能级门控(空 features = 无商业功能)
+- `LicenseDeviceFingerprint(dataDir)` 设备指纹 SHA-256(稳定机器信息,不含 MAC)
 
-// 2. LicenseVerifyKey 入口按 §2 规则分派:
-//    第二段 32 hex → V1 HMAC(现有逻辑保留)
-//    否则 → V2:license.VerifyKey(key, pub) (见下方参考实现)
+### 5.2 `internal/service/license_verify.go`(V3 在线闭环)
 
-// 3. 功能门控:新增按 feature 判断(兼容旧 key 视为全功能)
-//    LicenseFeatureActive(st, "compose")
-//    旧 V1 key(type==pro 且有效) → 全部 features 视为开启(迁移兼容)
-//    新 V2 key → 按 payload.features 精确判断
+- license.json 存储:`key / device_id / activation_id / activation_token / last_successful_verify /
+  verify_state / server_url / last_server_time / last_local_time / clock_offset`
+- verify 请求:仅 `activation_token + device_id + product_version + timestamp + nonce`(**不再携带完整 Key**)
+- 服务端 `server_time` → 本地 `clock_offset` → `trusted_now`(防本地时间作弊)
+- 本地时钟回退检测:回退 > 5 分钟 → `CLOCK_ROLLBACK_DETECTED`(禁用 Pro)
+- `minimum_client_version` 高于当前版本 → `UPDATE_REQUIRED`(提示,不封禁);
+  `blocked_versions` 命中 → `CLIENT_VERSION_BLOCKED`(禁用 Pro)
+- license.json 权限 `0600`;`activation_token` 绝不写入日志
+- 兼容:旧服务端(未升级)返回 `key is required` 时自动回退旧格式(key + activation_id)
 
-// 4. 删除/禁用 LicenseGenerateKey 的生产使用 —— HMAC secret 已公开,
-//    继续用它签发等于免费授权。仅保留测试用途(或整体移除)。
-```
-
-### 5.2 `internal/api/license.go`
-
-- `licenseDemoKey`：V2 时代改为返回由**测试专用密钥对**签发的 demo key（或直接下线该接口）。
-  现有 SEC-001（仅 `DisplayVersion()=="unknown"` 的开发构建可用）保护机制保留。
-
-### 5.3 `internal/service/compose.go` / `container.go` / `appstore.go`
-
-- `license: func() bool { return LicenseActive(st) }` → 改为按 feature：
-  ```go
-  license: func() bool { return service.LicenseFeatureActive(st, "compose") }
-  ```
-
-### 5.4 `web/src/views/SettingsView.vue` + `web/src/locales/*`
-
-- 许可证表格增加列：License ID、features（badge）、max_devices
-- 激活流程不变（粘贴 key / 上传 .lic 文件均兼容 V2 字符串）
-- 新增 i18n keys（14 语言全量同步）
-
-### 5.5 `internal/service/license.go` 消费端参考实现（V2）
+### 5.3 门控点
 
 ```go
-// V2VerifyKey 消费端 Ed25519 验证(与签发端契约一致,改动需同步两端)
-func V2VerifyKey(key string, pub ed25519.PublicKey) (map[string]any, bool) {
-    parts := strings.SplitN(strings.TrimSpace(key), ".", 2)
-    if len(parts) != 2 { return nil, false }
-    raw, err := base64.RawURLEncoding.DecodeString(parts[0])
-    if err != nil { return nil, false }
-    sig, err := base64.RawURLEncoding.DecodeString(parts[1])
-    if err != nil || len(sig) != ed25519.SignatureSize { return nil, false }
-    var p struct {
-        Version   int      `json:"version"`
-        KeyID     string   `json:"key_id"`
-        LicenseID string   `json:"license_id"`
-        Product   string   `json:"product"`
-        Plan      string   `json:"plan"`
-        Features  []string `json:"features"`
-        Customer  string   `json:"customer"`
-        IssuedAt  int64    `json:"issued_at"`
-        ExpiresAt int64    `json:"expires_at"`
-        MaxDevices int     `json:"max_devices"`
-    }
-    if json.Unmarshal(raw, &p) != nil { return nil, false }
-    if p.Version != 2 { return nil, false }                 // UNSUPPORTED_LICENSE_VERSION
-    if p.Product != "docker-manager-go" { return nil, false }
-    if !ed25519.Verify(pub, raw, sig) { return nil, false } // 篡改即失败
-    out := map[string]any{
-        "version": p.Version, "key_id": p.KeyID, "license_id": p.LicenseID,
-        "plan": p.Plan, "features": p.Features, "customer": p.Customer,
-        "issued_at": p.IssuedAt, "expires_at": p.ExpiresAt, "max_devices": p.MaxDevices,
-        "status": "active",
-    }
-    if p.ExpiresAt > 0 && p.ExpiresAt < time.Now().Unix() { out["status"] = "expired" }
-    return out, true
-}
+license: func() bool { return service.LicenseFeatureActive(st, "compose") }
 ```
 
 ---
 
-## 6. 部署步骤（接入正式环境）
+## 6. 部署步骤(接入正式环境)
 
-1. 部署 License Server（见 README），首次启动记录输出的 **PUBLIC KEY**
-2. 把公钥写入 `internal/service/license.go` 的 `licensePublicKeys` 映射（key_id 与 Server 的 `LICENSE_KEY_ID` 一致）
-3. 按 §5 改造 Docker_Manager_Go 并发布
+1. 部署 License Server(见 README),首次启动记录输出的 **PUBLIC KEY**
+2. 把公钥写入 `internal/service/license.go` 的 `licensePublicKeys` 映射(key_id 与 Server 的 `LICENSE_KEY_ID` 一致)
+3. 升级顺序:**先升级 License Server**(003 migration 自动执行),再发布 Docker_Manager_Go
+   (旧客户端在升级窗口期通过兼容路径继续工作)
 4. 用 License Server 签发一个测试 License → 在面板粘贴激活 → 验证 Pro 生效
-5. 回归验证：旧 V1 Key 仍能激活（双轨兼容期），随后择机迁移存量用户
+5. 存量激活设备:003 migration 已把旧 activation_code 迁移为 token hash,
+   客户端升级后本地旧凭据(activation_id=旧 code)仍可完成 verify/deactivate,**无需重新激活**
 
 ## 7. 兼容性策略
 
-- **V1 已彻底删除**(2026-08 重构,规格书 §31):客户端只验证 V2 Ed25519,
-  License Server 只签发 V2;不存在 V1/V2 双轨。
+- **V1 已彻底删除**(2026-08):客户端只验证 V2 Ed25519,License Server 只签发 V2
+- **V2.1 向后兼容**:新增可选字段(customer_id/subscription_id),存量 V2 Key 继续有效
+- **升级窗口兼容**:服务端 verify/deactivate 保留旧格式(key + activation_id)路径
+  (文档标注 deprecated);新客户端对旧服务端自动回退
 - License payload 带 `version`,未来 v3 由消费端明确拒绝而不是静默接受
 
-## 8. 在线授权闭环 API(客户端接入)
+## 8. 在线授权闭环 API(客户端接入,V3)
 
 客户端(消费端)导入 License 并通过本地 Ed25519 验签后,进入在线闭环:
 
-### 8.1 激活
+### 8.1 激活(携带完整 License Key,仅首次激活/重新激活用)
 
 ```
 POST /api/v1/public/activate
-{ "key": "<完整 License Key>", "device_id": "<机器唯一ID>",
-  "device_name": "可选", "product_version": "可选" }
+{
+  "key": "<完整 License Key>",
+  "device_id": "<机器唯一ID>",
+  "device_name": "可选",
+  "product_version": "可选",
+  "device_fingerprint": "可选(SHA-256 稳定机器信息)",
+  "platform": "可选(linux/windows/...)",
+  "architecture": "可选(amd64/arm64/...)"
+}
 ```
 
 成功(200):
 ```json
-{ "status": "active", "activation_id": "<64位hex>", "license_id": "DMG-...",
-  "expires_at": 1810000000, "features": ["compose"], "max_devices": 3,
-  "next_verify_after": 86400 }
+{
+  "status": "active",
+  "activation_id": "ACT-01JXXXXXXXXXXXX",
+  "activation_token": "<64位hex,明文只返回这一次>",
+  "license_id": "DMG-...",
+  "expires_at": 1810000000,
+  "features": ["compose"],
+  "max_devices": 3,
+  "server_time": 1780000000,
+  "next_verify_after": 86400
+}
 ```
 
 失败(统一错误体):`INVALID_SIGNATURE` / `LICENSE_NOT_FOUND` / `LICENSE_REVOKED` /
-`LICENSE_EXPIRED` / `DEVICE_LIMIT_REACHED`。
+`LICENSE_EXPIRED` / `DEVICE_LIMIT_REACHED` / `RATE_LIMITED`。
 
 语义:
-- 同一设备重复激活 → 幂等(200,返回原 activation_id)
-- 解绑过的设备重新激活 → 恢复 active,发新 activation_id,不占新额度
+- 同一设备重复激活 → 幂等(200,同一 activation_id,签发新 token,旧 token 吊销)
+- 解绑过的设备重新激活 → 恢复 active,发新 activation_id + 新 token,不占新额度
 - 活跃设备数 >= max_devices → `DEVICE_LIMIT_REACHED`(服务端事务+行锁,并发激活不突破)
 
-### 8.2 定期验证(每 24h,即 next_verify_after)
+### 8.2 定期验证(每 24h,即 next_verify_after;**不携带 License Key**)
 
 ```
 POST /api/v1/public/verify
-{ "key": "...", "activation_id": "...", "device_id": "...", "product_version": "可选" }
+{
+  "activation_token": "...",
+  "device_id": "...",
+  "product_version": "可选",
+  "timestamp": 1780000000,
+  "nonce": "<32字节随机hex>"
+}
 ```
 
 返回:
 ```json
-{ "status": "valid", "valid": true, "license_id": "DMG-...", "plan": "pro",
-  "customer": "Zhao", "expires_at": 1810000000, "features": ["compose"],
-  "next_verify_after": 86400 }
+{
+  "status": "valid",
+  "valid": true,
+  "license_id": "DMG-...",
+  "plan": "pro",
+  "customer": "Zhao",
+  "expires_at": 1810000000,
+  "features": ["compose"],
+  "server_time": 1780000000,
+  "minimum_client_version": "1.5.0",
+  "next_verify_after": 86400
+}
 ```
 
 | status | 客户端动作 |
 |---|---|
-| `valid` | 继续 Pro,记录 `last_successful_verify`,24h 后再验 |
+| `valid` | 继续 Pro,记录 `last_successful_verify` + `server_time`(更新 clock_offset),24h 后再验 |
+| `blocked` | 版本被封禁,立即禁用 Pro(`CLIENT_VERSION_BLOCKED`) |
 | `revoked` | 立即禁用 Pro,提示"License revoked" |
 | `expired` | 立即禁用 Pro(本地 expires_at 也应同时判断) |
 | `invalid` | 设备未激活/凭据不匹配,禁用 Pro |
 
-兼容:仅传 `key`(不带 device_id)→ 返回 License 在线状态,不校验设备(旧调用兼容)。
+**版本控制**(服务端 `server_settings`):
+- `minimum_client_version`:客户端当前版本低于该值 → 本地标记 `UPDATE_REQUIRED`(提示升级,不封禁)
+- `blocked_versions`(JSON 数组):当前版本命中 → 服务端返回 `status=blocked`,禁用 Pro
+  (用于严重安全漏洞/协议漏洞/绕过漏洞的紧急封禁)
+
+**重放防护**:`timestamp` 必须落在服务端时间 ±5 分钟窗口内,`nonce` 必须未使用
+(服务端存 SHA-256,1 小时后清理)。违规返回 `400 REPLAY_DETECTED`。
+
+兼容:旧格式(仅传 `key` + `activation_id`)升级窗口期仍可用,文档标注 deprecated。
 
 ### 8.3 解绑
 
 ```
 POST /api/v1/public/deactivate
-{ "key": "...", "activation_id": "...", "device_id": "..." }
+{
+  "activation_token": "...",
+  "device_id": "...",
+  "timestamp": 1780000000,
+  "nonce": "..."
+}
 ```
 
-- 必须携带激活时返回的 `activation_id`,防止 Device A 解绑 Device B(不匹配 → `ACTIVATION_NOT_FOUND`)
+- 凭据(token)必须匹配该 License + 设备,防止 Device A 解绑 Device B(不匹配 → `ACTIVATION_NOT_FOUND`)
 - 吊销/过期的 License 也允许解绑(客户端清理)
+- 服务端同时吊销该激活的全部 token(解绑后旧 token 立即失效)
 
 ### 8.4 限流
 
 `activate`/`deactivate`:15min 20 次/IP;`verify`:15min 120 次/IP。超限 `RATE_LIMITED`。
+超限与无效凭据均写入 `security_events`(管理端可查)。
 
-### 8.5 Grace Period(客户端本地维护)
+### 8.5 Server Time(防本地时间作弊)
+
+- 所有公开 API 成功响应携带 `server_time`
+- 客户端保存 `last_server_time / last_local_time`,计算 `clock_offset = server_time - local_time`
+- 之后使用 `trusted_now = local_now + clock_offset` 判断过期
+- 本地时钟回退检测:`local_now < last_local_time - 5min` → `CLOCK_ROLLBACK_DETECTED`,禁用 Pro
+  (正常 NTP 微调不会误判)
+
+### 8.6 Grace Period(客户端本地维护)
 
 服务端只负责状态判定;7 天宽限由客户端保存 `last_successful_verify` 实现:
 验证失败(网络/服务不可达)→ 宽限期内继续 Pro;超过宽限期仍未验证成功 → 禁用 Pro。
+**revoked/blocked 不能进入宽限**:服务端明确判定时立即禁用。
 **验证必须带超时(建议 10s),且不得阻塞 Docker_Manager_Go 主流程(独立后台任务)。**
+
+### 8.7 安全事件(管理端)
+
+`POST /api/v1/admin/security-events?page=&page_size=&type=` 可查:
+`invalid_signature` / `invalid_token` / `rate_limit_exceeded` / `replay_detected` /
+`tampered_timestamp` / `device_limit_exceeded` / `client_version_blocked` 等。
+安全事件只记录非敏感标识(license_id/activation_id/device_id/ip),
+**绝不记录完整 License Key / Activation Token / 私钥**。
+
+---
+
+## 9. 管理 API(V3 新增)
+
+| 端点 | 说明 |
+|---|---|
+| `POST/GET /api/v1/admin/customers` | 客户管理(CUS-*) |
+| `POST/GET /api/v1/admin/subscriptions` | 订阅管理(SUB-*;支持 active/expired/cancelled/suspended) |
+| `POST /api/v1/admin/subscriptions/:id/status` | 更新订阅状态 |
+| `GET /api/v1/admin/security-events` | 安全事件列表(分页,可按 type 过滤) |
+| `GET/PUT /api/v1/admin/settings` | 服务器配置:`minimum_client_version` / `blocked_versions`(JSON 数组) |
+| `POST /api/v1/admin/licenses` | 签发(可带 `customer_id` / `subscription_id`) |
+| `POST /api/v1/admin/licenses/:id/revoke` | 吊销(`reason` + `revoked_by` 记录) |
+
+## 10. 数据库(V3 migration 003)
+
+```
+customers ──< subscriptions ──< licenses ──< license_revisions
+                                        └──< activations ──< activation_tokens(只存 SHA-256)
+security_events / security_nonces / server_settings / signing_keys / audit_logs / admins
+```
+
+- `activations`:新增 `activation_id`(ACT-*)/ `device_fingerprint` / `platform` /
+  `architecture` / `expires_at` / `revoked_at`
+- `activation_tokens`:凭据只存 `SHA-256(token)` hash,明文绝不落库
+- 存量 `activations.activation_code`(明文)在 003 migration 中迁移为 token hash 后清空
+- `licenses`:新增 `customer_ref` / `subscription_id` / `revoked_by`(可空,存量兼容)

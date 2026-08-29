@@ -1,0 +1,241 @@
+openapi: 3.0.3
+info:
+  title: Docker Manager License API
+  description: >-
+    Docker_Manager_License 签发/验证服务。外部 Base URL:
+    https://manager.kejizero.xyz/license-api(反代剥离 /license-api 前缀)。
+    V1(HMAC)已完全移除;License V2.1(Ed25519)+ Activation Token 体系。
+    详细契约见 docs/integration.md 与 docs/license-schema.json。
+  version: "3.0.0"
+servers:
+  - url: https://manager.kejizero.xyz/license-api
+    description: 生产环境
+paths:
+  /api/v1/public/activate:
+    post:
+      summary: 激活(License Key 仅用于首次激活/重新激活)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [key, device_id]
+              properties:
+                key: { type: string, description: 完整 License Key }
+                device_id: { type: string }
+                device_name: { type: string }
+                product_version: { type: string }
+                device_fingerprint: { type: string, description: SHA-256 稳定机器信息 }
+                platform: { type: string }
+                architecture: { type: string }
+      responses:
+        "200":
+          description: 激活成功(activation_token 明文只返回这一次)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: active }
+                  activation_id: { type: string, example: "ACT-01JXXXXXXXXXXXX" }
+                  activation_token: { type: string, description: 64 位 hex;数据库只存 SHA-256 }
+                  license_id: { type: string }
+                  expires_at: { type: integer }
+                  features: { type: array, items: { type: string } }
+                  max_devices: { type: integer }
+                  server_time: { type: integer }
+                  next_verify_after: { type: integer, example: 86400 }
+        "400": { $ref: "#/components/responses/Error" }
+        "403": { description: LICENSE_REVOKED }
+        "404": { description: LICENSE_NOT_FOUND }
+        "409": { description: DEVICE_LIMIT_REACHED }
+        "429": { description: RATE_LIMITED }
+  /api/v1/public/verify:
+    post:
+      summary: 定期验证(不携带 License Key;timestamp + nonce 防重放)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [activation_token, device_id, timestamp, nonce]
+              properties:
+                activation_token: { type: string }
+                device_id: { type: string }
+                product_version: { type: string }
+                timestamp: { type: integer, description: Unix 秒,±5 分钟窗口 }
+                nonce: { type: string, description: 32 字节随机 hex,一次性 }
+      responses:
+        "200":
+          description: 状态判定(valid/blocked/revoked/expired/invalid)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [valid, blocked, revoked, expired, invalid] }
+                  valid: { type: boolean }
+                  license_id: { type: string }
+                  plan: { type: string }
+                  expires_at: { type: integer }
+                  features: { type: array, items: { type: string } }
+                  server_time: { type: integer }
+                  minimum_client_version: { type: string }
+                  next_verify_after: { type: integer }
+        "400": { $ref: "#/components/responses/Error", description: REPLAY_DETECTED/BAD_REQUEST }
+        "429": { description: RATE_LIMITED }
+  /api/v1/public/deactivate:
+    post:
+      summary: 解绑(凭据必须匹配 License + 设备)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [activation_token, device_id, timestamp, nonce]
+              properties:
+                activation_token: { type: string }
+                device_id: { type: string }
+                timestamp: { type: integer }
+                nonce: { type: string }
+      responses:
+        "200":
+          description: 解绑成功
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok: { type: boolean, example: true }
+                  server_time: { type: integer }
+        "404": { description: ACTIVATION_NOT_FOUND }
+        "400": { description: REPLAY_DETECTED }
+        "429": { description: RATE_LIMITED }
+  /api/v1/admin/security-events:
+    get:
+      summary: 安全事件列表(JWT 认证)
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, default: 20 } }
+        - { name: type, in: query, schema: { type: string }, description: 按事件类型过滤 }
+      responses:
+        "200":
+          description: 安全事件(仅非敏感标识,无 key/token)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        event_type: { type: string, example: invalid_token }
+                        license_id: { type: string }
+                        activation_id: { type: string }
+                        device_id: { type: string }
+                        ip: { type: string }
+                        details: { type: string }
+                        created_at: { type: string, format: date-time }
+                  total: { type: integer }
+        "401": { $ref: "#/components/responses/Error" }
+  /api/v1/admin/settings:
+    get:
+      summary: 服务器配置(JWT 认证)
+      responses:
+        "200":
+          description: minimum_client_version / blocked_versions
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  minimum_client_version: { type: string, example: "1.5.0" }
+                  blocked_versions: { type: string, example: "[\"1.0.0\"]" }
+    put:
+      summary: 更新服务器配置(JWT 认证)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [key, value]
+              properties:
+                key: { type: string, enum: [minimum_client_version, blocked_versions] }
+                value: { type: string, description: blocked_versions 必须为 JSON 字符串数组 }
+      responses:
+        "200": { description: 更新成功 }
+        "400": { description: 未知 key 或格式非法 }
+  /api/v1/admin/customers:
+    post:
+      summary: 创建客户(JWT 认证)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                email: { type: string }
+                status: { type: string, default: active }
+      responses:
+        "201": { description: 创建成功(CUS-*) }
+    get:
+      summary: 客户列表(JWT 认证)
+      parameters:
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: page_size, in: query, schema: { type: integer, default: 20 } }
+      responses:
+        "200": { description: 分页列表 }
+  /api/v1/admin/subscriptions:
+    post:
+      summary: 创建订阅(JWT 认证)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [customer_id, plan, expires_at]
+              properties:
+                customer_id: { type: string, description: CUS-* }
+                plan: { type: string, example: pro }
+                status: { type: string, default: active }
+                starts_at: { type: integer }
+                expires_at: { type: integer }
+                auto_renew: { type: boolean }
+      responses:
+        "201": { description: 创建成功(SUB-*) }
+        "400": { description: 客户不存在或参数非法 }
+    get:
+      summary: 订阅列表(JWT 认证)
+      responses:
+        "200": { description: 分页列表 }
+components:
+  responses:
+    Error:
+      description: 统一错误体
+      content:
+        application/json:
+          schema:
+            type: object
+            properties:
+              error:
+                type: object
+                properties:
+                  code: { type: string, example: INVALID_SIGNATURE }
+                  message: { type: string }
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+security:
+  - bearerAuth: []

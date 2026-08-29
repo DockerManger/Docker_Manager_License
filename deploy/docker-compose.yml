@@ -33,6 +33,28 @@ services:
       - ./data:/data
       # PostgreSQL 数据目录(内置数据库,持久化)
       - ./pgdata:/var/lib/postgresql
+    # ============ 安全加固(不影响 PostgreSQL/nginx/license-server 正常工作) ============
+    # 只读根文件系统:所有可写路径必须来自 volume 或 tmpfs(entrypoint/nginx 日志已适配)
+    read_only: true
+    tmpfs:
+      # nginx pid、postgresql unix socket 锁文件、运行时临时文件
+      - /run
+      - /tmp
+    # 禁止提权(防容器内进程利用 SUID 提权)
+    security_opt:
+      - no-new-privileges:true
+    # 最小能力集:全部丢弃,只保留 entrypoint 切用户/修属主/绑 80 所需
+    # (su-exec 需要 SETUID/SETGID;chown 需要 CHOWN/FOWNER;nginx 绑 80 需要 NET_BIND_SERVICE)
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - FOWNER
+      - SETUID
+      - SETGID
+      - NET_BIND_SERVICE
+    # PG 共享内存(dynamic_shared_memory_type=posix 默认走 /dev/shm)
+    shm_size: 256mb
     healthcheck:
       # 经内置 nginx 反代检查(80 → 3000 /healthz)
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:80/healthz"]

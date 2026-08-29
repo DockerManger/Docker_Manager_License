@@ -41,7 +41,7 @@ func testDeps(t *testing.T) (*Deps, func()) {
 		t.Fatalf("migrate: %v", err)
 	}
 	// 清空测试数据(保留 schema)
-	for _, tbl := range []string{"audit_logs", "activations", "license_revisions", "licenses", "admins", "signing_keys"} {
+	for _, tbl := range []string{"security_nonces", "activation_tokens", "security_events", "subscriptions", "customers", "audit_logs", "activations", "license_revisions", "licenses", "admins", "signing_keys"} {
 		if _, err := pool.Exec(ctx, "DELETE FROM "+tbl); err != nil {
 			t.Fatalf("clean %s: %v", tbl, err)
 		}
@@ -58,22 +58,32 @@ func testDeps(t *testing.T) (*Deps, func()) {
 		service.NewActivationRepo(pool),
 		service.NewSigningKeyRepo(pool),
 		service.NewAuditRepo(pool),
+		service.NewActivationTokenRepo(pool),
+		service.NewSecurityEventRepo(pool),
+		service.NewNonceRepo(pool),
+		service.NewServerSettingsRepo(pool),
+		service.NewCustomerRepo(pool),
+		service.NewSubscriptionRepo(pool),
 		kp, "test-key",
 	)
 	if err := licenseSvc.EnsureSigningKey(ctx); err != nil {
 		t.Fatalf("ensure signing key: %v", err)
 	}
 	d := &Deps{
-		AdminRepo:      service.NewAdminRepo(pool),
-		LicenseSvc:     licenseSvc,
-		AuditRepo:      service.NewAuditRepo(pool),
-		ActivationRepo: service.NewActivationRepo(pool),
-		SigningKeyRepo: service.NewSigningKeyRepo(pool),
-		JWTSecret:      "test-jwt-secret",
-		JWTTTL:         time.Hour,
-		Limiter:        auth.NewLoginLimiter(time.Minute, 1000, time.Minute), // 测试放宽限流
-		ActivateLim:    auth.NewLoginLimiter(time.Minute, 1000, time.Minute), // 测试放宽限流
-		VerifyLim:      auth.NewLoginLimiter(time.Minute, 1000, time.Minute), // 测试放宽限流
+		AdminRepo:        service.NewAdminRepo(pool),
+		LicenseSvc:       licenseSvc,
+		AuditRepo:        service.NewAuditRepo(pool),
+		ActivationRepo:   service.NewActivationRepo(pool),
+		SigningKeyRepo:   service.NewSigningKeyRepo(pool),
+		CustomerRepo:     service.NewCustomerRepo(pool),
+		SubscriptionRepo: service.NewSubscriptionRepo(pool),
+		Security:         service.NewSecurityEventRepo(pool),
+		Settings:         service.NewServerSettingsRepo(pool),
+		JWTSecret:        "test-jwt-secret",
+		JWTTTL:           time.Hour,
+		Limiter:          auth.NewLoginLimiter(time.Minute, 1000, time.Minute), // 测试放宽限流
+		ActivateLim:      auth.NewLoginLimiter(time.Minute, 1000, time.Minute), // 测试放宽限流
+		VerifyLim:        auth.NewLoginLimiter(time.Minute, 1000, time.Minute), // 测试放宽限流
 	}
 	return d, func() { pool.Close() }
 }

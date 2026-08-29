@@ -8,6 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/DockerManger/Docker_Manager_License/internal/model"
 	"github.com/DockerManger/Docker_Manager_License/internal/service"
 )
 
@@ -74,6 +75,14 @@ func handleError(c *gin.Context, err error) {
 		abort(c, http.StatusNotFound, "ACTIVATION_NOT_FOUND", "activation not found or does not match device")
 	case errors.Is(err, service.ErrInvalidSignature):
 		abort(c, http.StatusBadRequest, "INVALID_SIGNATURE", "invalid license key signature")
+	case errors.Is(err, service.ErrReplayDetected):
+		abort(c, http.StatusBadRequest, "REPLAY_DETECTED", "replay detected: timestamp outside window or nonce reused")
+	case errors.Is(err, service.ErrTokenInvalid):
+		abort(c, http.StatusBadRequest, "TOKEN_INVALID", "invalid activation token")
+	case errors.Is(err, service.ErrTokenExpired):
+		abort(c, http.StatusUnauthorized, "TOKEN_EXPIRED", "activation token expired")
+	case errors.Is(err, service.ErrClientVersionBlocked):
+		abort(c, http.StatusForbidden, "CLIENT_VERSION_BLOCKED", "client version blocked, please update")
 	case errors.Is(err, service.ErrActivationMissing):
 		abort(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
 	case errors.Is(err, service.ErrNotFound):
@@ -82,5 +91,17 @@ func handleError(c *gin.Context, err error) {
 		abort(c, http.StatusConflict, "CONFLICT", err.Error())
 	default:
 		abort(c, http.StatusBadRequest, "BAD_REQUEST", err.Error())
+	}
+}
+
+// secEvent 构造安全事件(API 层辅助;不记录敏感信息)。
+func secEvent(eventType, licenseID, activationID, deviceID, ip, details string) *model.SecurityEvent {
+	return &model.SecurityEvent{
+		EventType:    eventType,
+		LicenseID:    licenseID,
+		ActivationID: activationID,
+		DeviceID:     deviceID,
+		IP:           ip,
+		Details:      details,
 	}
 }

@@ -24,6 +24,10 @@ trap cleanup TERM INT EXIT
 echo "==> [entrypoint] fixing volume ownership..."
 chown -R "$APP_USER:$APP_USER" /private /data 2>/dev/null || true
 
+# read-only rootfs 下 /run 是 tmpfs(镜像内目录被隐藏),重建运行目录
+mkdir -p /run/nginx /run/postgresql /tmp
+chown "$PG_USER:$PG_USER" /run/postgresql 2>/dev/null || true
+
 # 判断是否使用内置 PG:未设置 DATABASE_URL,或指向 127.0.0.1/localhost
 USE_INTERNAL_PG=0
 if [ -z "${DATABASE_URL:-}" ]; then

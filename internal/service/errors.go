@@ -21,4 +21,14 @@ var (
 	ErrActivationMismatch = errors.New("activation not found or does not match device")
 	// ErrActivationMissing 未提供 device_id。
 	ErrActivationMissing = errors.New("device_id is required")
+	// ErrReplayDetected 请求重放(timestamp 越界或 nonce 已用)。
+	ErrReplayDetected = errors.New("replay detected")
+	// ErrTokenInvalid 激活凭据无效。
+	ErrTokenInvalid = errors.New("invalid activation token")
+	// ErrTokenExpired 激活凭据已过期。
+	ErrTokenExpired = errors.New("activation token expired")
+	// ErrClientVersionBlocked 客户端版本已被服务端封禁。
+	ErrClientVersionBlocked = errors.New("client version blocked")
+	// ErrClockRollback 客户端检测到本地时钟回退(客户端本地状态)。
+	ErrClockRollback = errors.New("clock rollback detected")
 )

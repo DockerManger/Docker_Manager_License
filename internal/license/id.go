@@ -23,6 +23,21 @@ func NewLicenseID() string {
 	return "DMG-" + newULID()
 }
 
+// NewActivationID 生成 ACT-<ULID>(V3:激活展示 ID)。
+func NewActivationID() string {
+	return "ACT-" + newULID()
+}
+
+// NewCustomerID 生成 CUS-<ULID>(V3:客户展示 ID)。
+func NewCustomerID() string {
+	return "CUS-" + newULID()
+}
+
+// NewSubscriptionID 生成 SUB-<ULID>(V3:订阅展示 ID)。
+func NewSubscriptionID() string {
+	return "SUB-" + newULID()
+}
+
 // newULID 生成 26 字符 Crockford base32 ULID(标准 ULID 布局:48bit 毫秒时间戳 + 80bit 随机)。
 func newULID() string {
 	var b [16]byte

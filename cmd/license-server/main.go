@@ -137,28 +137,56 @@ func runServer() int {
 	}
 
 	// 组装依赖
+	securityRepo := service.NewSecurityEventRepo(pool)
+	settingsRepo := service.NewServerSettingsRepo(pool)
 	licenseSvc := service.NewLicenseService(
 		service.NewLicenseRepo(pool),
 		service.NewActivationRepo(pool),
 		service.NewSigningKeyRepo(pool),
 		service.NewAuditRepo(pool),
+		service.NewActivationTokenRepo(pool),
+		securityRepo,
+		service.NewNonceRepo(pool),
+		settingsRepo,
+		service.NewCustomerRepo(pool),
+		service.NewSubscriptionRepo(pool),
 		kp, cfg.LicenseKeyID,
 	)
 	// 注册当前签名密钥到注册表(key rotation 基础;旧公钥永不删除)
 	if err := licenseSvc.EnsureSigningKey(ctx); err != nil {
 		log.Fatalf("register signing key: %v", err)
 	}
+	// 重放防护 nonce 定期清理(窗口外记录无保留价值)
+	nonceRepo := service.NewNonceRepo(pool)
+	go func() {
+		ticker := time.NewTicker(service.NonceMaxAge)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				if err := nonceRepo.Cleanup(ctx, service.NonceMaxAge); err != nil {
+					log.Printf("nonce cleanup: %v", err)
+				}
+			}
+		}
+	}()
 	deps := &api.Deps{
-		AdminRepo:      service.NewAdminRepo(pool),
-		LicenseSvc:     licenseSvc,
-		AuditRepo:      service.NewAuditRepo(pool),
-		ActivationRepo: service.NewActivationRepo(pool),
-		SigningKeyRepo: service.NewSigningKeyRepo(pool),
-		JWTSecret:      cfg.JWTSecret,
-		JWTTTL:         cfg.JWTTTL,
-		Limiter:        auth.NewLoginLimiter(15*time.Minute, 10, 15*time.Minute),
-		ActivateLim:    auth.NewLoginLimiter(15*time.Minute, 20, 15*time.Minute),  // 激活/解绑:15min 20 次,防 Key 爆破
-		VerifyLim:      auth.NewLoginLimiter(15*time.Minute, 120, 15*time.Minute), // 验证:15min 120 次(24h/设备 足够宽松)
+		AdminRepo:        service.NewAdminRepo(pool),
+		LicenseSvc:       licenseSvc,
+		AuditRepo:        service.NewAuditRepo(pool),
+		ActivationRepo:   service.NewActivationRepo(pool),
+		SigningKeyRepo:   service.NewSigningKeyRepo(pool),
+		CustomerRepo:     service.NewCustomerRepo(pool),
+		SubscriptionRepo: service.NewSubscriptionRepo(pool),
+		Security:         securityRepo,
+		Settings:         settingsRepo,
+		JWTSecret:        cfg.JWTSecret,
+		JWTTTL:           cfg.JWTTTL,
+		Limiter:          auth.NewLoginLimiter(15*time.Minute, 10, 15*time.Minute),
+		ActivateLim:      auth.NewLoginLimiter(15*time.Minute, 20, 15*time.Minute),  // 激活/解绑:15min 20 次,防 Key 爆破
+		VerifyLim:        auth.NewLoginLimiter(15*time.Minute, 120, 15*time.Minute), // 验证:15min 120 次(24h/设备 足够宽松)
 	}
 
 	gin.SetMode(gin.ReleaseMode)

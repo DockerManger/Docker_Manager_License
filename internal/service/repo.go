@@ -87,17 +87,23 @@ type LicenseRepo struct{ pool *pgxpool.Pool }
 // NewLicenseRepo 构造。
 func NewLicenseRepo(pool *pgxpool.Pool) *LicenseRepo { return &LicenseRepo{pool: pool} }
 
-// licenseCols 带 active_devices 子查询(所有 SELECT 共用,表别名固定为 l)。
+// licenseCols 带 active_devices 子查询与 V3 关联展示 ID(所有 SELECT 共用,表别名固定为 l)。
 const licenseCols = `l.id, l.license_id, l.key_id, l.product, l.plan, l.features, l.customer,
+	COALESCE(c.customer_id, ''), COALESCE(s.subscription_id, ''),
 	l.issued_at, l.expires_at, l.max_devices,
 	(SELECT COUNT(*) FROM activations a WHERE a.license_id = l.id AND a.status = 'active') AS active_devices,
-	l.status, l.revoked_at, l.revoked_reason, l.notes, l.created_at, l.updated_at`
+	l.status, l.revoked_at, l.revoked_reason, l.revoked_by, l.notes, l.created_at, l.updated_at`
+
+// licenseJoin V3 关联表 join(LEFT JOIN,兼容无客户/订阅的存量 License)。
+const licenseJoin = ` LEFT JOIN customers c ON c.id = l.customer_ref
+	LEFT JOIN subscriptions s ON s.id = l.subscription_id`
 
 func scanLicense(row pgx.Row) (*model.License, error) {
 	var l model.License
 	err := row.Scan(&l.ID, &l.LicenseID, &l.KeyID, &l.Product, &l.Plan, &l.Features, &l.Customer,
+		&l.CustomerID, &l.SubscriptionID,
 		&l.IssuedAt, &l.ExpiresAt, &l.MaxDevices, &l.ActiveDevices,
-		&l.Status, &l.RevokedAt, &l.RevokedReason, &l.Notes, &l.CreatedAt, &l.UpdatedAt)
+		&l.Status, &l.RevokedAt, &l.RevokedReason, &l.RevokedBy, &l.Notes, &l.CreatedAt, &l.UpdatedAt)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, ErrNotFound
@@ -107,14 +113,15 @@ func scanLicense(row pgx.Row) (*model.License, error) {
 	return &l, nil
 }
 
-// Create 创建 License 主记录。
-func (r *LicenseRepo) Create(ctx context.Context, l *model.License) error {
+// Create 创建 License 主记录(customerRef/subscriptionRef 可空,关联 V3 表)。
+func (r *LicenseRepo) Create(ctx context.Context, l *model.License, customerRef, subscriptionRef string) error {
 	return r.pool.QueryRow(ctx, `
 		INSERT INTO licenses (license_id, key_id, product, plan, features, customer,
-			issued_at, expires_at, max_devices, status, notes)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+			customer_ref, subscription_id, issued_at, expires_at, max_devices, status, notes)
+		VALUES ($1,$2,$3,$4,$5,$6,NULLIF($7,''),NULLIF($8,''),$9,$10,$11,$12,$13)
 		RETURNING id, created_at, updated_at`,
 		l.LicenseID, l.KeyID, l.Product, l.Plan, l.Features, l.Customer,
+		customerRef, subscriptionRef,
 		l.IssuedAt, l.ExpiresAt, l.MaxDevices, l.Status, l.Notes,
 	).Scan(&l.ID, &l.CreatedAt, &l.UpdatedAt)
 }
@@ -122,13 +129,13 @@ func (r *LicenseRepo) Create(ctx context.Context, l *model.License) error {
 // GetByLicenseID 按展示 ID 查询。
 func (r *LicenseRepo) GetByLicenseID(ctx context.Context, licenseID string) (*model.License, error) {
 	return scanLicense(r.pool.QueryRow(ctx,
-		`SELECT `+licenseCols+` FROM licenses l WHERE l.license_id = $1`, licenseID))
+		`SELECT `+licenseCols+` FROM licenses l`+licenseJoin+` WHERE l.license_id = $1`, licenseID))
 }
 
 // GetByDBID 按数据库 UUID 查询。
 func (r *LicenseRepo) GetByDBID(ctx context.Context, id string) (*model.License, error) {
 	return scanLicense(r.pool.QueryRow(ctx,
-		`SELECT `+licenseCols+` FROM licenses l WHERE l.id = $1`, id))
+		`SELECT `+licenseCols+` FROM licenses l`+licenseJoin+` WHERE l.id = $1`, id))
 }
 
 // List 分页列表(按创建时间倒序)。
@@ -144,7 +151,7 @@ func (r *LicenseRepo) List(ctx context.Context, offset, limit int, status string
 		append([]any{}, args[2:]...)...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
-	rows, err := r.pool.Query(ctx, `SELECT `+licenseCols+` FROM licenses l`+where+
+	rows, err := r.pool.Query(ctx, `SELECT `+licenseCols+` FROM licenses l`+licenseJoin+where+
 		` ORDER BY l.created_at DESC LIMIT $1 OFFSET $2`, args...)
 	if err != nil {
 		return nil, 0, err
@@ -161,11 +168,11 @@ func (r *LicenseRepo) List(ctx context.Context, offset, limit int, status string
 	return out, total, rows.Err()
 }
 
-// UpdateStatus 更新状态(吊销/挂起)。
-func (r *LicenseRepo) UpdateStatus(ctx context.Context, id, status string, revokedAt *int64, reason string) error {
+// UpdateStatus 更新状态(吊销/挂起)。revokedBy 记录操作者。
+func (r *LicenseRepo) UpdateStatus(ctx context.Context, id, status string, revokedAt *int64, reason, revokedBy string) error {
 	tag, err := r.pool.Exec(ctx, `
-		UPDATE licenses SET status = $2, revoked_at = $3, revoked_reason = $4, updated_at = now()
-		WHERE id = $1`, id, status, revokedAt, reason)
+		UPDATE licenses SET status = $2, revoked_at = $3, revoked_reason = $4, revoked_by = $5, updated_at = now()
+		WHERE id = $1`, id, status, revokedAt, reason, revokedBy)
 	if err != nil {
 		return err
 	}

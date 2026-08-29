@@ -15,6 +15,8 @@ const (
 const (
 	ActivationActive      = "active"
 	ActivationDeactivated = "deactivated"
+	ActivationRevoked     = "revoked"
+	ActivationExpired     = "expired"
 )
 
 // SigningKeyStatus 签名密钥状态。
@@ -37,23 +39,26 @@ type Admin struct {
 
 // License 许可证主记录。
 type License struct {
-	ID            string    `json:"id"`         // 数据库 UUID
-	LicenseID     string    `json:"license_id"` // 展示用 DMG-<ULID>,全局唯一
-	KeyID         string    `json:"key_id"`     // 签发密钥标识
-	Product       string    `json:"product"`
-	Plan          string    `json:"plan"`
-	Features      []string  `json:"features"`
-	Customer      string    `json:"customer"`
-	IssuedAt      int64     `json:"issued_at"`
-	ExpiresAt     int64     `json:"expires_at"`
-	MaxDevices    int       `json:"max_devices"`
-	ActiveDevices int       `json:"active_devices"` // 当前激活设备数(查询时带出)
-	Status        string    `json:"status"`
-	RevokedAt     *int64    `json:"revoked_at,omitempty"`
-	RevokedReason string    `json:"revoked_reason,omitempty"`
-	Notes         string    `json:"notes,omitempty"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	ID             string    `json:"id"`         // 数据库 UUID
+	LicenseID      string    `json:"license_id"` // 展示用 DMG-<ULID>,全局唯一
+	KeyID          string    `json:"key_id"`     // 签发密钥标识
+	Product        string    `json:"product"`
+	Plan           string    `json:"plan"`
+	Features       []string  `json:"features"`
+	Customer       string    `json:"customer"`                  // 客户名(展示用,冗余)
+	CustomerID     string    `json:"customer_id,omitempty"`     // CUS-<ULID>(V3:关联 customers 表,查询时 join 带出)
+	SubscriptionID string    `json:"subscription_id,omitempty"` // SUB-<ULID>(V3:关联 subscriptions 表)
+	IssuedAt       int64     `json:"issued_at"`
+	ExpiresAt      int64     `json:"expires_at"`
+	MaxDevices     int       `json:"max_devices"`
+	ActiveDevices  int       `json:"active_devices"` // 当前激活设备数(查询时带出)
+	Status         string    `json:"status"`
+	RevokedAt      *int64    `json:"revoked_at,omitempty"`
+	RevokedReason  string    `json:"revoked_reason,omitempty"`
+	RevokedBy      string    `json:"revoked_by,omitempty"`
+	Notes          string    `json:"notes,omitempty"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 // LicenseRevision License 历史修订(每次签发/延期/变更都生成新修订,不覆盖历史)。
@@ -71,18 +76,80 @@ type LicenseRevision struct {
 
 // Activation 设备激活记录(在线激活闭环:激活/解绑/心跳由服务端权威记录)。
 type Activation struct {
-	ID             int64      `json:"id"`
-	LicenseID      string     `json:"license_id"`                // 展示用 DMG-*(查询时由 licenses 表 join 填充)
-	ActivationCode string     `json:"activation_code,omitempty"` // 激活凭据(客户端 deactivate/verify 携带)
-	DeviceID       string     `json:"device_id"`
-	DeviceName     string     `json:"device_name,omitempty"`
-	ProductVersion string     `json:"product_version,omitempty"`
-	Status         string     `json:"status"` // active / deactivated
-	ActivatedAt    time.Time  `json:"activated_at"`
-	LastSeenAt     time.Time  `json:"last_seen_at"`
-	DeactivatedAt  *time.Time `json:"deactivated_at,omitempty"`
-	IP             string     `json:"ip,omitempty"`
-	Metadata       string     `json:"metadata,omitempty"`
+	ID                int64      `json:"id"`
+	LicenseID         string     `json:"license_id"`    // 展示用 DMG-*(查询时由 licenses 表 join 填充)
+	ActivationID      string     `json:"activation_id"` // 展示 ID(ACT-<ULID>)
+	ActivationCode    string     `json:"-"`             // 历史明文凭据(003 迁移后已清空,不再读写)
+	DeviceID          string     `json:"device_id"`
+	DeviceName        string     `json:"device_name,omitempty"`
+	DeviceFingerprint string     `json:"device_fingerprint,omitempty"`
+	Platform          string     `json:"platform,omitempty"`
+	Architecture      string     `json:"architecture,omitempty"`
+	ProductVersion    string     `json:"product_version,omitempty"`
+	Status            string     `json:"status"` // active / deactivated / revoked / expired
+	ActivatedAt       time.Time  `json:"activated_at"`
+	LastSeenAt        time.Time  `json:"last_seen_at"`
+	DeactivatedAt     *time.Time `json:"deactivated_at,omitempty"`
+	ExpiresAt         *time.Time `json:"expires_at,omitempty"` // 激活有效期(随 License 过期)
+	RevokedAt         *time.Time `json:"revoked_at,omitempty"`
+	IP                string     `json:"ip,omitempty"`
+	Metadata          string     `json:"metadata,omitempty"`
+}
+
+// ActivationToken 激活凭据记录(只存 SHA-256 hash,数据库绝不明文)。
+type ActivationToken struct {
+	ID           int64      `json:"id"`
+	ActivationID int64      `json:"activation_id"` // activations.id
+	TokenHash    string     `json:"-"`             // SHA-256(hex),绝不返回
+	CreatedAt    time.Time  `json:"created_at"`
+	ExpiresAt    time.Time  `json:"expires_at"`
+	LastUsedAt   *time.Time `json:"last_used_at,omitempty"`
+	RevokedAt    *time.Time `json:"revoked_at,omitempty"`
+}
+
+// Customer 客户(V3:License 与客户身份分离)。
+type Customer struct {
+	ID         string    `json:"id"`
+	CustomerID string    `json:"customer_id"` // CUS-<ULID>
+	Name       string    `json:"name"`
+	Email      string    `json:"email,omitempty"`
+	Status     string    `json:"status"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
+// Subscription 订阅(V3:支持月付/年付/永久/升级/降级/续费)。
+type Subscription struct {
+	ID             string    `json:"id"`
+	SubscriptionID string    `json:"subscription_id"` // SUB-<ULID>
+	CustomerID     string    `json:"customer_id"`     // CUS-<ULID>(查询时 join 带出)
+	Plan           string    `json:"plan"`
+	Status         string    `json:"status"` // active / expired / cancelled / suspended
+	StartsAt       int64     `json:"starts_at"`
+	ExpiresAt      int64     `json:"expires_at"`
+	AutoRenew      bool      `json:"auto_renew"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+}
+
+// SecurityEvent 安全事件(只记录非敏感标识,不记录 key/token/私钥)。
+type SecurityEvent struct {
+	ID           int64     `json:"id"`
+	EventType    string    `json:"event_type"`
+	LicenseID    string    `json:"license_id,omitempty"`
+	ActivationID string    `json:"activation_id,omitempty"`
+	DeviceID     string    `json:"device_id,omitempty"`
+	IP           string    `json:"ip,omitempty"`
+	UserAgent    string    `json:"user_agent,omitempty"`
+	Details      string    `json:"details,omitempty"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+// ServerSetting 服务器配置键值。
+type ServerSetting struct {
+	Key       string    `json:"key"`
+	Value     string    `json:"value"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 // SigningKey 签名密钥注册表记录。

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"time"
 
 	"github.com/DockerManger/Docker_Manager_License/internal/crypto"
 	"github.com/DockerManger/Docker_Manager_License/internal/license"
@@ -23,28 +24,67 @@ type LicenseService struct {
 	activationRepo *ActivationRepo
 	signingKeys    *SigningKeyRepo
 	audit          *AuditRepo
+	tokens         *ActivationTokenRepo
+	security       *SecurityEventRepo
+	nonces         *NonceRepo
+	settings       *ServerSettingsRepo
+	customers      *CustomerRepo
+	subscriptions  *SubscriptionRepo
 	keyPair        *crypto.KeyPair
 	keyID          string
 }
 
 // NewLicenseService 构造。
-func NewLicenseService(repo *LicenseRepo, activationRepo *ActivationRepo, signingKeys *SigningKeyRepo, audit *AuditRepo, keyPair *crypto.KeyPair, keyID string) *LicenseService {
+func NewLicenseService(repo *LicenseRepo, activationRepo *ActivationRepo, signingKeys *SigningKeyRepo,
+	audit *AuditRepo, tokens *ActivationTokenRepo, security *SecurityEventRepo,
+	nonces *NonceRepo, settings *ServerSettingsRepo, customers *CustomerRepo,
+	subscriptions *SubscriptionRepo, keyPair *crypto.KeyPair, keyID string) *LicenseService {
 	return &LicenseService{
 		repo: repo, activationRepo: activationRepo, signingKeys: signingKeys,
-		audit: audit, keyPair: keyPair, keyID: keyID,
+		audit: audit, tokens: tokens, security: security, nonces: nonces,
+		settings: settings, customers: customers, subscriptions: subscriptions,
+		keyPair: keyPair, keyID: keyID,
 	}
+}
+
+// verifyKey 按 payload.key_id 从注册表取公钥验签。
+// 注册表查不到(理论上不会:启动即注册)时回退当前公钥,保证可用性。
+func (s *LicenseService) verifyKey(ctx context.Context, key string) (*license.Payload, bool) {
+	if p, ok := license.VerifyKey(key, s.keyPair.Public); ok {
+		return p, true
+	}
+	// key_id 指定的公钥(旧密钥轮换后仍需能验证旧 License)
+	if raw, err := s.signingKeys.GetPublicKey(ctx, keyIDOf(key)); err == nil {
+		if pub, err := crypto.PublicKeyFromBase64URL(raw); err == nil {
+			if p, ok := license.VerifyKey(key, pub); ok {
+				return p, true
+			}
+		}
+	}
+	return nil, false
+}
+
+// keyIDOf 从 Key 中提取 key_id(仅用于查公钥;解析失败返回空串,走当前公钥回退)。
+func keyIDOf(key string) string {
+	p, ok := license.DecodePayloadOnly(key)
+	if !ok {
+		return ""
+	}
+	return p.KeyID
 }
 
 // IssueRequest 签发请求(API 层解析后传入)。
 type IssueRequest struct {
-	Customer   string
-	Plan       string
-	Features   []string
-	ExpiresAt  int64 // Unix 秒
-	MaxDevices int
-	Notes      string
-	CreatedBy  string
-	IP         string
+	Customer       string
+	CustomerID     string // V3:CUS-*(可选,关联 customers 表)
+	SubscriptionID string // V3:SUB-*(可选,关联 subscriptions 表)
+	Plan           string
+	Features       []string
+	ExpiresAt      int64 // Unix 秒
+	MaxDevices     int
+	Notes          string
+	CreatedBy      string
+	IP             string
 }
 
 // IssueResult 签发结果。
@@ -69,8 +109,8 @@ func (s *LicenseService) Issue(ctx context.Context, req IssueRequest) (*IssueRes
 	if req.MaxDevices < 1 {
 		req.MaxDevices = 1
 	}
-	// 校验 features 与 plan 合法性
-	if !containsStr(license.Plans, req.Plan) {
+	// 校验 features 与 plan 合法性(plan 必须属于注册表且 Enabled)
+	if !containsStr(license.EnabledPlanNames, req.Plan) {
 		return nil, fmt.Errorf("unsupported plan: %q", req.Plan)
 	}
 	for _, f := range req.Features {
@@ -79,18 +119,43 @@ func (s *LicenseService) Issue(ctx context.Context, req IssueRequest) (*IssueRes
 		}
 	}
 
+	// V3:客户/订阅关联(可选)。指定时必须存在,写 licenses 外键与 payload。
+	var customerRef, subscriptionRef string
+	if req.CustomerID != "" {
+		c, err := s.customers.GetByCustomerID(ctx, req.CustomerID)
+		if err != nil {
+			if errors.Is(err, ErrNotFound) {
+				return nil, fmt.Errorf("customer not found: %s", req.CustomerID)
+			}
+			return nil, err
+		}
+		customerRef = c.ID
+	}
+	if req.SubscriptionID != "" {
+		ref, err := s.subscriptions.GetDBIDBySubscriptionID(ctx, req.SubscriptionID)
+		if err != nil {
+			if errors.Is(err, ErrNotFound) {
+				return nil, fmt.Errorf("subscription not found: %s", req.SubscriptionID)
+			}
+			return nil, err
+		}
+		subscriptionRef = ref
+	}
+
 	now := Now()
 	payload := &license.Payload{
-		Version:    license.CurrentVersion,
-		KeyID:      s.keyID,
-		LicenseID:  license.NewLicenseID(),
-		Product:    license.ProductDMG,
-		Plan:       req.Plan,
-		Features:   req.Features,
-		Customer:   req.Customer,
-		IssuedAt:   now,
-		ExpiresAt:  req.ExpiresAt,
-		MaxDevices: req.MaxDevices,
+		Version:        license.CurrentVersion,
+		KeyID:          s.keyID,
+		LicenseID:      license.NewLicenseID(),
+		Product:        license.ProductDMG,
+		Plan:           req.Plan,
+		Features:       req.Features,
+		Customer:       req.Customer,
+		CustomerID:     req.CustomerID,
+		SubscriptionID: req.SubscriptionID,
+		IssuedAt:       now,
+		ExpiresAt:      req.ExpiresAt,
+		MaxDevices:     req.MaxDevices,
 	}
 	key, err := license.EncodeKey(payload, s.keyPair.Private)
 	if err != nil {
@@ -98,19 +163,21 @@ func (s *LicenseService) Issue(ctx context.Context, req IssueRequest) (*IssueRes
 	}
 
 	l := &model.License{
-		LicenseID:  payload.LicenseID,
-		KeyID:      s.keyID,
-		Product:    license.ProductDMG,
-		Plan:       req.Plan,
-		Features:   req.Features,
-		Customer:   req.Customer,
-		IssuedAt:   now,
-		ExpiresAt:  req.ExpiresAt,
-		MaxDevices: req.MaxDevices,
-		Status:     model.StatusActive,
-		Notes:      req.Notes,
+		LicenseID:      payload.LicenseID,
+		KeyID:          s.keyID,
+		Product:        license.ProductDMG,
+		Plan:           req.Plan,
+		Features:       req.Features,
+		Customer:       req.Customer,
+		CustomerID:     req.CustomerID,
+		SubscriptionID: req.SubscriptionID,
+		IssuedAt:       now,
+		ExpiresAt:      req.ExpiresAt,
+		MaxDevices:     req.MaxDevices,
+		Status:         model.StatusActive,
+		Notes:          req.Notes,
 	}
-	if err := s.repo.Create(ctx, l); err != nil {
+	if err := s.repo.Create(ctx, l, customerRef, subscriptionRef); err != nil {
 		return nil, err
 	}
 	if err := s.saveRevision(ctx, l, payload, key, "issue", req.CreatedBy); err != nil {
@@ -197,7 +264,7 @@ func (s *LicenseService) Extend(ctx context.Context, licenseID string, days int,
 	return &IssueResult{License: l, Key: key, Payload: string(payload.CanonicalJSON())}, nil
 }
 
-// Revoke 吊销(软删除,保留记录与修订)。
+// Revoke 吊销(软删除,保留记录与修订)。revoked_by 记录操作管理员。
 func (s *LicenseService) Revoke(ctx context.Context, licenseID, reason, by, ip string) (*model.License, error) {
 	l, err := s.resolveLicense(ctx, licenseID)
 	if err != nil {
@@ -207,7 +274,11 @@ func (s *LicenseService) Revoke(ctx context.Context, licenseID, reason, by, ip s
 		return nil, fmt.Errorf("%w: already revoked", ErrConflict)
 	}
 	now := Now()
-	if err := s.repo.UpdateStatus(ctx, l.ID, model.StatusRevoked, &now, reason); err != nil {
+	if err := s.repo.UpdateStatus(ctx, l.ID, model.StatusRevoked, &now, reason, by); err != nil {
+		return nil, err
+	}
+	// 吊销后立即失效全部激活 token(客户端下次 verify 即 invalid)
+	if _, err := s.activationRepo.ResetDevices(ctx, l.ID, time.Unix(now, 0)); err != nil {
 		return nil, err
 	}
 	if err := s.auditLog(ctx, by, ip, "license.revoke", "license", l.LicenseID,
@@ -217,6 +288,7 @@ func (s *LicenseService) Revoke(ctx context.Context, licenseID, reason, by, ip s
 	l.Status = model.StatusRevoked
 	l.RevokedAt = &now
 	l.RevokedReason = reason
+	l.RevokedBy = by
 	return l, nil
 }
 

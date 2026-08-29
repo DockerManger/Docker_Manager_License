@@ -6,8 +6,11 @@
 //   - Feature Registry(FeatureRegistry 变量)与 Docker_Manager_Go 门控点一一对应
 //
 // 历史:V1 为 HMAC-SHA256 共享密钥(secret 硬编码在 Docker_Manager_Go 源码,
-// 已公开泄露)。V2 改用 Ed25519:签发端持私钥,消费端只持公钥,源码公开也无法伪造。
-// Docker_Manager_Go 保留 V1 验证路径用于兼容旧 Key,新签发一律 V2。
+// 已公开泄露),已于 2026-08 完全移除。V2 改用 Ed25519:签发端持私钥,消费端只持公钥,
+// 源码公开也无法伪造。消费端只接受 V2,未知 version 必须拒绝(UNSUPPORTED_LICENSE_VERSION)。
+//
+// V2.1 演进(向后兼容):Payload 新增可选字段 customer_id / subscription_id(omitempty),
+// 存量 V2 Key(无新字段)继续有效;消费端 JSON 解析天然忽略未知/缺失字段。
 package license
 
 import (
@@ -28,29 +31,65 @@ const ProductDMG = "docker-manager-go"
 
 // FeatureRegistry 统一 Feature 定义 —— 与 Docker_Manager_Go 的授权门控点一一对应。
 // 严禁两端各自起名(如 advanced-compose vs compose_advanced),否则授权失效。
+// 未注册的 feature 一律拒绝签发与验证(防契约漂移)。
 var FeatureRegistry = []string{
-	"compose",          // Docker Compose 部署(compose.go:185 license.required)
-	"container_create", // 容器创建(container.go:116 license.required)
-	"appstore",         // 应用商店安装(appstore.go:131 license.required)
+	"compose",          // Docker Compose 部署(compose.go license.required)
+	"container_create", // 容器创建(container.go license.required)
+	"appstore",         // 应用商店安装(appstore.go license.required)
 }
 
-// Plans 支持的套餐。第一版:free / pro。License Server 只签发商业 License(free 由
-// Docker_Manager_Go 无 License 时天然成立),结构上预留 business/enterprise。
-var Plans = []string{"pro"}
+// PlannedFeatures 规划中的 Feature(文档/后续版本路线图)。
+// 注意:未在 FeatureRegistry 注册前不可签发 —— 客户端门控点尚未实现,签了等于"买了不能用"。
+var PlannedFeatures = []string{
+	"terminal", "backup", "monitor", "multi_node", "api", "automation",
+}
+
+// Plan 套餐定义(统一套餐注册表,套餐逻辑不允许散落在业务代码里)。
+type Plan struct {
+	Name     string   // 套餐标识(写入 payload.plan)
+	Features []string // 该套餐包含的 Feature 全集
+	Enabled  bool     // 是否可签发(依赖的 feature 未全部落地时置 false 预留)
+}
+
+// PlanRegistry 统一套餐注册表。
+// free 不需要 License(消费端无 License 时天然成立),不可签发;
+// 签发端只签发 Enabled 套餐,EnabledPlanNames 与消费端校验集合保持一致。
+var PlanRegistry = []Plan{
+	{Name: "free", Features: nil, Enabled: false}, // 免费:无需 License,不可签发
+	{Name: "pro", Features: FeatureRegistry, Enabled: true},
+	// 以下预留:multi_node/api/audit/sso 等 feature 落地并注册后置 Enabled=true
+	{Name: "business", Features: []string{"compose", "container_create", "appstore", "multi_node", "api"}, Enabled: false},
+	{Name: "enterprise", Features: []string{"compose", "container_create", "appstore", "multi_node", "api", "audit", "sso"}, Enabled: false},
+}
+
+// EnabledPlanNames 当前可签发/可验证的套餐集合(消费端同步校验)。
+var EnabledPlanNames = enabledPlanNames()
+
+func enabledPlanNames() []string {
+	out := make([]string, 0, len(PlanRegistry))
+	for _, p := range PlanRegistry {
+		if p.Enabled {
+			out = append(out, p.Name)
+		}
+	}
+	return out
+}
 
 // Payload License 签名载荷。字段顺序即规范 JSON 顺序,修改字段必须同步
 // Docker_Manager_Go 的消费端解析。
 type Payload struct {
-	Version    int      `json:"version"`
-	KeyID      string   `json:"key_id"`             // 签发密钥标识(轮换/吊销用),如 "2026-01"
-	LicenseID  string   `json:"license_id"`         // 展示用唯一 ID,如 DMG-01JXXXXXXXXXXXX
-	Product    string   `json:"product"`            // docker-manager-go
-	Plan       string   `json:"plan"`               // pro
-	Features   []string `json:"features,omitempty"` // FeatureRegistry 子集
-	Customer   string   `json:"customer"`           // 客户名(第一版无 CRM,直接存名字)
-	IssuedAt   int64    `json:"issued_at"`          // Unix 秒
-	ExpiresAt  int64    `json:"expires_at"`         // Unix 秒
-	MaxDevices int      `json:"max_devices"`        // 允许绑定设备数(第一版消费端单机绑定,预留)
+	Version        int      `json:"version"`
+	KeyID          string   `json:"key_id"`                    // 签发密钥标识(轮换/吊销用),如 "2026-01"
+	LicenseID      string   `json:"license_id"`                // 展示用唯一 ID,如 DMG-01JXXXXXXXXXXXX
+	Product        string   `json:"product"`                   // docker-manager-go
+	Plan           string   `json:"plan"`                      // 必须属于 EnabledPlanNames
+	Features       []string `json:"features,omitempty"`        // FeatureRegistry 子集
+	Customer       string   `json:"customer"`                  // 客户名(展示用)
+	CustomerID     string   `json:"customer_id,omitempty"`     // V2.1 新增:customers.customer_id 关联(可选,向后兼容)
+	SubscriptionID string   `json:"subscription_id,omitempty"` // V2.1 新增:subscriptions.subscription_id 关联(可选,向后兼容)
+	IssuedAt       int64    `json:"issued_at"`                 // Unix 秒
+	ExpiresAt      int64    `json:"expires_at"`                // Unix 秒
+	MaxDevices     int      `json:"max_devices"`               // 允许绑定设备数
 }
 
 // Validate 校验 Payload 字段合法性(签发前/消费端解析后都应调用)。
@@ -67,14 +106,17 @@ func (p *Payload) Validate() error {
 	if p.Product != ProductDMG {
 		return fmt.Errorf("unexpected product: %q", p.Product)
 	}
-	if !contains(Plans, p.Plan) {
+	if !contains(EnabledPlanNames, p.Plan) {
 		return fmt.Errorf("unsupported plan: %q", p.Plan)
+	}
+	if p.IssuedAt <= 0 {
+		return errors.New("issued_at is required")
 	}
 	if p.ExpiresAt <= 0 {
 		return errors.New("expires_at is required")
 	}
-	if p.IssuedAt <= 0 {
-		return errors.New("issued_at is required")
+	if p.IssuedAt > p.ExpiresAt {
+		return errors.New("issued_at must not be after expires_at")
 	}
 	if p.MaxDevices < 1 {
 		return errors.New("max_devices must be >= 1")

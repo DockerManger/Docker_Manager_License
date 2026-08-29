@@ -6,11 +6,15 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 
 	"github.com/MinimaxFlora/Docker_Manager_License/internal/crypto"
 	"github.com/MinimaxFlora/Docker_Manager_License/internal/license"
 	"github.com/MinimaxFlora/Docker_Manager_License/internal/model"
 )
+
+// uuidRe 标准 UUID 格式(8-4-4-4-12 十六进制),用于区分数据库 UUID 与其他 ID 字符串。
+var uuidRe = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
 // LicenseService License 业务核心:签发 / 查询 / 延期 / 吊销 / 在线激活验证。
 // 签名只在这里发生(依赖 Ed25519 私钥),API 层只做参数传递。
@@ -121,6 +125,7 @@ func (s *LicenseService) Issue(ctx context.Context, req IssueRequest) (*IssueRes
 
 // resolveLicense 按展示 ID(DMG-...)或数据库 UUID 解析许可证。
 // 管理 API 的 :id 参数兼容两种标识:列表返回的 id(UUID)与 license_id(DMG-...)都能查。
+// 非 UUID 格式的未知 ID 直接返回 ErrNotFound(避免把非法字符串丢给 PG 的 uuid 列报 500)。
 func (s *LicenseService) resolveLicense(ctx context.Context, id string) (*model.License, error) {
 	l, err := s.repo.GetByLicenseID(ctx, id)
 	if err == nil {
@@ -128,6 +133,9 @@ func (s *LicenseService) resolveLicense(ctx context.Context, id string) (*model.
 	}
 	if !errors.Is(err, ErrNotFound) {
 		return nil, err
+	}
+	if !uuidRe.MatchString(id) {
+		return nil, ErrNotFound
 	}
 	return s.repo.GetByDBID(ctx, id)
 }

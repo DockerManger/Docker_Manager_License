@@ -55,7 +55,11 @@ services:
     restart: unless-stopped
     command: tunnel --no-autoupdate run
     environment:
-      - TUNNEL_TOKEN=${CF_TUNNEL_TOKEN:?设置 CF_TUNNEL_TOKEN 后启动}
+      # 注意:不能使用 :? 必填语法 —— compose 会对全文件所有服务做变量插值,
+      # 即使服务在 profile 中未启用,插值阶段仍会校验必填变量并报错。
+      # 用 :- 可选项:不带 --profile tunnel 时该服务根本不创建,不受影响;
+      # 带 --profile tunnel 且未设 token 时容器启动失败(日志可见,提醒补 token)。
+      - TUNNEL_TOKEN=${CF_TUNNEL_TOKEN:-}
     depends_on:
       - license-server
 

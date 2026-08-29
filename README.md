@@ -87,8 +87,7 @@ docker compose -f deploy/docker-compose.yml logs -f license-server
 
 日志还会打印 **PUBLIC KEY**(PEM)——复制保存,它是 Docker_Manager_Go 集成所需的唯一密钥材料。
 
-可选:自定义数据库密码/管理员密码 → `./deploy/setup-env.sh` 或设置环境变量
-(`POSTGRES_PASSWORD` / `ADMIN_USERNAME` / `ADMIN_PASSWORD`)。
+可选:自定义数据库密码/管理员密码 → 设置环境变量后启动(`POSTGRES_PASSWORD` / `ADMIN_USERNAME` / `ADMIN_PASSWORD`)。
 
 ## 本地开发
 

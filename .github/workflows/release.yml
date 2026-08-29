@@ -21,6 +21,8 @@ permissions:
 
 env:
   IMAGE_NAME: docker_manager_license
+  # GHCR 路径必须全小写(Docker 仓库名要求);owner 变更时同步修改
+  GHCR_IMAGE: ghcr.io/minimaxflora/docker-manager-license
   # tag 触发取 ref_name,手动触发取输入;两者都为空时兜底 dev
   RELEASE_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || inputs.version || 'dev' }}
 
@@ -90,8 +92,8 @@ jobs:
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:latest
             ${{ secrets.DOCKERHUB_USERNAME }}/${{ env.IMAGE_NAME }}:${{ env.RELEASE_VERSION }}
-            ghcr.io/${{ lower(github.repository) }}:latest
-            ghcr.io/${{ lower(github.repository) }}:${{ env.RELEASE_VERSION }}
+            ${{ env.GHCR_IMAGE }}:latest
+            ${{ env.GHCR_IMAGE }}:${{ env.RELEASE_VERSION }}
           build-args: |
             VERSION=${{ env.RELEASE_VERSION }}
             COMMIT=${{ github.sha }}

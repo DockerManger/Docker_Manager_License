@@ -26,6 +26,35 @@ Docker_Manager_License                    Docker_Manager_Go (开源)
 
 ---
 
+## 1.5 对外 API Base URL(唯一规范)
+
+生产环境固定唯一 Base URL(规格书 §22,禁止多套前缀):
+
+```
+https://manager.kejizero.xyz/license-api
+```
+
+客户端请求 = **Base URL + 内部 API 路径**:
+
+| 操作 | 完整 URL(对外) | 内部路径(license-server) |
+|---|---|---|
+| 激活 | `https://manager.kejizero.xyz/license-api/api/v1/public/activate` | `/api/v1/public/activate` |
+| 验证 | `https://manager.kejizero.xyz/license-api/api/v1/public/verify` | `/api/v1/public/verify` |
+| 解绑 | `https://manager.kejizero.xyz/license-api/api/v1/public/deactivate` | `/api/v1/public/deactivate` |
+| 健康检查 | `https://manager.kejizero.xyz/license-api/health` | `/health`(别名 `/healthz` 兼容) |
+| 管理后台 | `https://manager.kejizero.xyz/`(SPA) | 前端 + `/api/v1/admin/*` |
+
+**前缀剥离**:Caddy 反代配置 `uri strip_prefix /license-api` 后转发到
+license-server 容器(`license-server:3000`),license-server 内部**没有**
+`/license-api` 前缀——所有内部路由以 `/api/v1/...` 开头。
+
+开发/私有部署可用环境变量 `DM_LICENSE_SERVER_URL` 覆盖客户端地址;
+License Server 侧 `SERVER_ADDR` 控制监听(默认 `:3000`)。
+
+
+
+---
+
 ## 2. Key 字符串格式
 
 ```
@@ -37,12 +66,9 @@ Docker_Manager_License                    Docker_Manager_Go (开源)
 eyJ2ZXJzaW9uIjoyLCJrZXlfaWQiOiIyMDI2LTAxIiwibGljZW5zZV9pZCI6IkRNRy0wMUowMDAw...}.<88位签名>
 ```
 
-**V1/V2 无歧义分派规则**（`LicenseVerifyKey` 入口处）：
-
-| 特征 | 判定 |
-|---|---|
-| 第二段长度 = 32 且为 hex | V1（HMAC-SHA256 旧格式，保留兼容） |
-| 其他（第二段为 base64url，解码后 64 字节） | V2（Ed25519） |
+**V1 已彻底删除**(规格书 §31):V1 HMAC 验证路径、`licenseSecret`、`LicenseSign`
+已从 Docker_Manager_Go 移除,不再保留 V1/V2 双协议。消费端只接受 V2(Ed25519)。
+存量 V1 Key 无法激活,需重新签发 V2 License。
 
 ---
 
@@ -184,10 +210,9 @@ func V2VerifyKey(key string, pub ed25519.PublicKey) (map[string]any, bool) {
 
 ## 7. 兼容性策略
 
-- **不重写现有格式**：V1 HMAC 验证路径保留，旧 Key 持续有效
-- 新签发全部走 V2（License Server 只签发 V2）
-- 迁移期结束（可选）在 Docker_Manager_Go 增加配置关闭 V1 路径
-- License payload 带 `version`，未来 v3 由消费端明确拒绝而不是静默接受
+- **V1 已彻底删除**(2026-08 重构,规格书 §31):客户端只验证 V2 Ed25519,
+  License Server 只签发 V2;不存在 V1/V2 双轨。
+- License payload 带 `version`,未来 v3 由消费端明确拒绝而不是静默接受
 
 ## 8. 在线授权闭环 API(客户端接入)
 

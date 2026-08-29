@@ -12,20 +12,30 @@ import (
 
 // Router 注册全部路由。
 //
-// 路由划分:
-//   - /api/v1/public/*   公开 API(当前仅 verify)
-//   - /api/v1/admin/*    管理 API(全部需要 JWT 认证)
+// 路由划分(对外经反代 /license-api/ 剥离前缀后进入,内部无 /license-api 前缀):
+//   - GET  /health(z)            健康检查(Caddy / Docker healthcheck 用)
+//   - /api/v1/public/*           公开 API(激活/验证/解绑,供 Docker_Manager_Go 客户端)
+//   - /api/v1/admin/*            管理 API(全部需要 JWT 认证)
+//
+// 对外规范 Base URL(生产固定):
+//   https://manager.kejizero.xyz/license-api
+// 客户端请求 = Base + "/api/v1/public/activate|verify|deactivate"
+// 反代(Caddy/nginx)负责剥离 /license-api 前缀。
 //
 // 管理 API 匿名不可访问,且与公开 API 物理分离。
 func Router(d *Deps) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
 
-	// 基础信息(健康检查)
+	// 基础信息(健康检查):/healthz 兼容旧部署,/health 为规格书规范路径
 	r.GET("/healthz", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
+	r.GET("/health", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
 
+	// 公开 API 与管理 API 前缀均可由环境变量覆盖(默认 /api/v1/public、/api/v1/admin)
 	v1 := r.Group("/api/v1")
 
 	// ---------- 公开(在线授权闭环,供 Docker_Manager_Go 客户端) ----------

@@ -24,9 +24,6 @@ type Config struct {
 
 	AdminUsername string // 首次初始化管理员用户名,默认 admin
 	AdminPassword string // 首次初始化管理员密码;为空则自动生成并打印到日志
-
-	PublicBasePath string // 公开 API 前缀,默认 /api/v1/public
-	AdminBasePath  string // 管理 API 前缀,默认 /api/v1/admin
 }
 
 // Load 从环境变量加载配置。除 DATABASE_URL 外均有默认值/自动生成,开箱即用。
@@ -41,8 +38,6 @@ func Load() (*Config, error) {
 		LicensePrivKeyPath: envOr("LICENSE_PRIVATE_KEY_PATH", "private/license.key"),
 		AdminUsername:      envOr("ADMIN_USERNAME", "admin"),
 		AdminPassword:      os.Getenv("ADMIN_PASSWORD"),
-		PublicBasePath:     envOr("PUBLIC_API_BASE", "/api/v1/public"),
-		AdminBasePath:      envOr("ADMIN_API_BASE", "/api/v1/admin"),
 	}
 	if c.DatabaseURL == "" {
 		return nil, fmt.Errorf("config: DATABASE_URL is required")

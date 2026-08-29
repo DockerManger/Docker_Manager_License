@@ -101,6 +101,12 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Prepare web embed placeholder
+        # 同 check job:web/embed.go 的 go:embed all:dist 需要目录存在
+        run: |
+          mkdir -p web/dist
+          touch web/dist/.gitkeep
+
       - name: DB integration tests (API + license lifecycle + security)
         run: go test -v ./internal/api/...
 

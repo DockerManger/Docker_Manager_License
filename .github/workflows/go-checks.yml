@@ -60,7 +60,10 @@ jobs:
       - name: govulncheck
         # 不传 go-version-file:action 默认 go-version-input=stable,
         # 两者同传会产生 "only go-version will be used" 警告
+        # cache: false:避免与上方 setup-go 缓存冲突(tar 恢复 File exists)
         uses: golang/govulncheck-action@v1
+        with:
+          cache: false
 
   integration:
     runs-on: ubuntu-latest

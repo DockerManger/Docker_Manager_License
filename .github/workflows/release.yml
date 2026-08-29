@@ -1,11 +1,19 @@
 name: Release
 
 # on 使用引号形式(GitHub 官方推荐,YAML 1.1 解析器会把裸 on 当布尔值)
-# tag 触发(如 v1.0.0):分别发布二进制(GitHub Release)与 Docker 镜像(Docker Hub + GHCR)
+# 触发方式:
+#   - tag 推送(如 v1.0.0):自动发布,版本取自 tag
+#   - 手动 dispatch:可填版本号(默认 dev)
 "on":
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 发布版本号(如 v1.0.0;留空则用 dev)
+        required: false
+        default: dev
 
 permissions:
   contents: write
@@ -13,6 +21,8 @@ permissions:
 
 env:
   IMAGE_NAME: docker_manager_license
+  # tag 触发取 ref_name,手动触发取输入;两者都为空时兜底 dev
+  RELEASE_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || inputs.version || 'dev' }}
 
 jobs:
   # ============ Job 1: 二进制发布(GitHub Release) ============
@@ -35,7 +45,7 @@ jobs:
       - name: Build linux/${{ matrix.arch }}
         run: |
           CGO_ENABLED=0 GOOS=linux GOARCH=${{ matrix.arch }} go build -trimpath \
-            -ldflags="-s -w -X main.Version=${GITHUB_REF_NAME} -X main.Commit=${GITHUB_SHA}" \
+            -ldflags="-s -w -X main.Version=${{ env.RELEASE_VERSION }} -X main.Commit=${GITHUB_SHA}" \
             -o license-server-linux-${{ matrix.arch }} ./cmd/license-server
           tar -czf license-server-linux-${{ matrix.arch }}.tar.gz license-server-linux-${{ matrix.arch }}
 
@@ -79,11 +89,11 @@ jobs:
           push: true
           tags: |
             ${{ secrets.DOCKERHUB_USERNAME }}/${IMAGE_NAME}:latest
-            ${{ secrets.DOCKERHUB_USERNAME }}/${IMAGE_NAME}:${{ github.ref_name }}
+            ${{ secrets.DOCKERHUB_USERNAME }}/${IMAGE_NAME}:${{ env.RELEASE_VERSION }}
             ghcr.io/${{ github.repository }}:latest
-            ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+            ghcr.io/${{ github.repository }}:${{ env.RELEASE_VERSION }}
           build-args: |
-            VERSION=${{ github.ref_name }}
+            VERSION=${{ env.RELEASE_VERSION }}
             COMMIT=${{ github.sha }}
             BUILD_TIME=${{ github.event.head_commit.timestamp }}
 

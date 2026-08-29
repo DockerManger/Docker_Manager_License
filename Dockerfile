@@ -27,7 +27,7 @@ RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath \
     -ldflags="-s -w -X main.Version=${VERSION} -X main.Commit=${COMMIT} -X main.BuildTime=${BUILD_TIME}" \
     -o license-server ./cmd/license-server
 
-# ================= Stage 3: 运行镜像(non-root) =================
+# ================= Stage 3: 运行镜像(单容器全包:license-server + nginx + PostgreSQL) =================
 FROM alpine:3.20
 ARG VERSION=unknown
 ARG COMMIT=unknown
@@ -37,25 +37,29 @@ LABEL org.opencontainers.image.source="https://github.com/MinimaxFlora/Docker_Ma
 LABEL org.opencontainers.image.version=${VERSION}
 LABEL org.opencontainers.image.revision=${COMMIT}
 LABEL org.opencontainers.image.created=${BUILD_TIME}
-RUN apk add --no-cache ca-certificates tini su-exec \
-    && addgroup -S license && adduser -S -G license license
+# nginx:反代 /license-api/ → 127.0.0.1:3000;postgresql16:内置数据库(仅监听 127.0.0.1)
+# 单容器模式:用户只需 docker run -p 80:80 + 域名解析,无需宿主机 nginx
+RUN apk add --no-cache ca-certificates tini su-exec nginx postgresql16 \
+    && addgroup -S license && adduser -S -G license license \
+    && mkdir -p /run/nginx /private /data
 
 COPY --from=build /app/license-server /usr/local/bin/license-server
-# entrypoint:root 启动修复挂载目录属主后降权为 license 用户(解决写私钥权限问题)
+# entrypoint:root 启动 PG → license-server → nginx,修复挂载目录属主后降权运行
 COPY deploy/entrypoint.sh /usr/local/bin/entrypoint.sh
-RUN chmod +x /usr/local/bin/entrypoint.sh
-
-# 私钥挂载目录(绝不 COPY 私钥进镜像)
-RUN mkdir -p /private /data \
+# 内置 nginx 反代配置(/license-api/ 子路径方案,与 README 一致)
+COPY deploy/nginx.conf /etc/nginx/nginx.conf
+RUN chmod +x /usr/local/bin/entrypoint.sh \
     && chown -R license:license /private /data
 
 ENV SERVER_ADDR=:3000
 ENV DATA_DIR=/data
 ENV LICENSE_PRIVATE_KEY_PATH=/private/license.key
-VOLUME ["/private", "/data"]
-EXPOSE 3000
+# 内置 PG:数据目录(挂卷持久化)
+ENV PGDATA=/var/lib/postgresql
+VOLUME ["/private", "/data", "/var/lib/postgresql"]
+EXPOSE 80
 
-# entrypoint 需要 root 权限修复目录属主,再降权执行
+# entrypoint 需要 root 权限修复目录属主/启停 PG,再降权执行各进程
 USER root
 ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/entrypoint.sh"]
 CMD ["license-server"]

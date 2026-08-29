@@ -62,7 +62,10 @@ payload = {
 
 完整契约与 Docker_Manager_Go 改造清单见 **[docs/integration.md](docs/integration.md)**。
 
-## 快速开始 (Docker Compose)
+## 快速开始 (Docker Compose,单容器全包)
+
+> 镜像内置 license-server + nginx 反代 + PostgreSQL,**对外仅暴露 80 端口**,
+> 无需在宿主机配置 nginx / PostgreSQL / .env。
 
 ### 一键部署(推荐)
 
@@ -70,44 +73,36 @@ payload = {
 curl -fsSL https://github.com/MinimaxFlora/Docker_Manager_License/raw/refs/heads/master/deploy/install.sh | bash
 ```
 
-脚本自动:检测环境 → 创建部署目录(`~/docker-manager-license`)→ 下载 compose → 生成数据库密码 → 启动 → 打印管理员账号/密码/公钥。
+脚本自动:检测环境 → 创建部署目录(`~/docker-manager-license`)→ 下载 compose → 拉镜像 → 启动 → 打印管理员账号/密码/公钥。
 
 可选参数(环境变量):
 ```bash
 DML_DIR=~/dml DML_PORT=8080 curl -fsSL https://github.com/MinimaxFlora/Docker_Manager_License/raw/refs/heads/master/deploy/install.sh | bash
-# 国内网络: DML_MIRROR=https://ghproxy.com ...
+# 国内网络加速: DML_MIRROR=https://docker.m.daocloud.io ...
 # 重新部署: DML_FORCE=1 ...
 ```
 
-### 手动部署
+### 手动部署(等价,一条命令)
 
 ```bash
 # 无需 .env —— 所有敏感配置首次启动自动生成并打印在日志里
-docker compose -f deploy/docker-compose.yml up -d
-docker compose -f deploy/docker-compose.yml logs -f license-server
+docker compose up -d
+docker compose logs -f license-server
 ```
 
 ### 域名接入(推荐,Docker_Manager_Go 已内置固定地址)
 
 Docker_Manager_Go 内置官方授权服务器地址 `https://manager.kejizero.xyz/license-api`,
-由 nginx 将 `/license-api/` 反代到 License Server(:3000),**客户端无需任何配置**:
+**nginx 反代已内置在镜像中**,你只需要:
 
-```nginx
-# manager.kejizero.xyz 的 server 块内
-location /license-api/ {
-    proxy_pass http://127.0.0.1:3000/;   # 去掉 /license-api/ 前缀
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-}
-```
+1. 在 Cloudflare 把域名 A 记录指向服务器 IP(开启 Proxied 橙色云朵 → 免费 HTTPS)
+2. 完成,无需任何 nginx 配置
 
 客户端实际请求: `https://manager.kejizero.xyz/license-api/api/v1/public/activate|verify|deactivate`
 (HTTPS 必需;开发/自建服务器可用环境变量 `DM_LICENSE_SERVER_URL` 覆盖客户端地址)。
 
 首次启动自动完成:
-1. 初始化 PostgreSQL(migration 自动执行)
+1. 初始化内置 PostgreSQL(migration 自动执行,数据在 `./pgdata`)
 2. 生成 Ed25519 私钥 → `./private/license.key` (0600,entrypoint 自动修复目录权限)
 3. 生成 JWT secret → `./data/jwt_secret` (重启不失效)
 4. 创建管理员,日志中打印:
@@ -115,7 +110,7 @@ location /license-api/ {
 ```
 ==============================================
 初始管理员已创建,请立即登录并修改密码:
-  地址: http://<服务器IP>:3000
+  地址: http://<服务器IP>:80
   用户名: admin
   密码: <自动生成的随机密码>
 ==============================================

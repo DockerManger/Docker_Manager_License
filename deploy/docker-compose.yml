@@ -1,18 +1,21 @@
 # ============================================================
-# Docker Manager License — 签发服务端 Docker Compose 部署
+# Docker Manager License — 单容器全包部署(推荐)
 #
-# 快速开始:
+# 一条命令部署:
 #   docker compose up -d
-#   首次启动自动:初始化数据库 + 生成 Ed25519 私钥(private/license.key)
-#                 + 生成管理员密码(打印在日志里)+ JWT secret
 #
-# HTTPS 访问(推荐,防网络链路篡改):
-#   设置 CF_TUNNEL_TOKEN 后: docker compose --profile tunnel up -d
-#   浏览器通过 https://<域名>/ 访问,流量走 Cloudflare 加密通道
+# 镜像内置:license-server + nginx 反代 + PostgreSQL
+#   - 对外仅暴露 80 端口(nginx → /license-api/ → license-server:3000)
+#   - 数据库在容器内(仅监听 127.0.0.1),数据挂载 ./pgdata 持久化
+#   - 私钥首次启动自动生成 → ./private/license.key(0600)
+#   - 管理员密码/JWT secret 自动生成并打印在启动日志里
 #
-# 安全提示:
-#   - private/ 目录(含私钥)不要提交 Git、不要备份到公开位置
-#   - 私钥文件权限 0600(entrypoint 自动修复目录属主)
+# 域名接入(HTTPS 由 Cloudflare Proxied 免费提供):
+#   1. DNS 把域名 A 记录指向本机 IP(Cloudflare 开橙色云朵)
+#   2. 客户端走 https://<域名>/license-api/api/v1/public/...
+#   无需在宿主机配置 nginx!
+#
+# 端口自定义:修改下面 "80:80" 为 "8080:80" 即可(左侧是宿主端口)。
 # ============================================================
 services:
   license-server:
@@ -20,64 +23,19 @@ services:
     container_name: docker-manager-license
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "80:80"
     environment:
-      - SERVER_ADDR=:3000
-      - DATA_DIR=/data
-      - DATABASE_URL=postgres://license:${POSTGRES_PASSWORD:-licensepass}@postgres:5432/license?sslmode=disable
-      # JWT_SECRET 留空则首次启动自动生成并持久化到 /data/jwt_secret
-      - JWT_SECRET=${JWT_SECRET:-}
-      - LICENSE_KEY_ID=${LICENSE_KEY_ID:-2026-01}
-      - LICENSE_PRIVATE_KEY_PATH=/private/license.key
-      # 管理员:用户名默认 admin;ADMIN_PASSWORD 留空则自动生成并打印在启动日志里
-      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
       - TZ=Asia/Shanghai
     volumes:
-      # 私钥目录(0600),绝不可提交 Git;entrypoint 启动时自动修复属主,无需手动 chown
+      # 私钥目录(0600,绝不可提交 Git;entrypoint 自动修复属主)
       - ./private:/private
       # 数据目录(JWT secret 持久化)
       - ./data:/data
-    depends_on:
-      postgres:
-        condition: service_healthy
+      # PostgreSQL 数据目录(内置数据库,持久化)
+      - ./pgdata:/var/lib/postgresql
     healthcheck:
-      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/healthz"]
+      # 经内置 nginx 反代检查(80 → 3000 /healthz)
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:80/healthz"]
       interval: 30s
       timeout: 5s
       retries: 3
-
-  # Cloudflare Tunnel(可选):设置 CF_TUNNEL_TOKEN 后启用,HTTPS 访问不受网络链路干扰
-  #   docker compose --profile tunnel up -d
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    profiles: ["tunnel"]
-    restart: unless-stopped
-    command: tunnel --no-autoupdate run
-    environment:
-      # 注意:不能使用 :? 必填语法 —— compose 会对全文件所有服务做变量插值,
-      # 即使服务在 profile 中未启用,插值阶段仍会校验必填变量并报错。
-      # 用 :- 可选项:不带 --profile tunnel 时该服务根本不创建,不受影响;
-      # 带 --profile tunnel 且未设 token 时容器启动失败(日志可见,提醒补 token)。
-      - TUNNEL_TOKEN=${CF_TUNNEL_TOKEN:-}
-    depends_on:
-      - license-server
-
-  postgres:
-    image: postgres:18-alpine
-    container_name: docker-manager-license-db
-    restart: unless-stopped
-    environment:
-      - POSTGRES_USER=license
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-licensepass}
-      - POSTGRES_DB=license
-      - TZ=Asia/Shanghai
-    volumes:
-      # PostgreSQL 18+ 新布局:数据挂载到 /var/lib/postgresql(主版本子目录),
-      # 不能挂 /var/lib/postgresql/data(旧布局,18 镜像会拒绝启动)
-      - ./postgres-data:/var/lib/postgresql
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U license -d license"]
-      interval: 10s
-      timeout: 5s
-      retries: 5

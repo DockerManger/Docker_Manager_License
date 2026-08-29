@@ -48,6 +48,8 @@ func main() {
 		os.Exit(runMigrate())
 	case len(os.Args) >= 2 && os.Args[1] == "keygen":
 		os.Exit(runKeygen(os.Args[2:]))
+	case len(os.Args) >= 2 && os.Args[1] == "pubkey":
+		os.Exit(runPubkey())
 	case len(os.Args) >= 2 && (os.Args[1] == "-h" || os.Args[1] == "--help"):
 		usage()
 		os.Exit(0)
@@ -64,16 +66,18 @@ func usage() {
   license-server migrate    仅执行数据库迁移
   license-server keygen     生成 Ed25519 密钥对到 private/license.key + private/license.pub
   license-server keygen -o <dir>
+  license-server pubkey     打印当前公钥(PEM,集成到 Docker_Manager_Go 用)
 
 环境变量:
   DATABASE_URL              必填,PostgreSQL DSN
-  JWT_SECRET                必填,管理端 JWT 签名密钥
-  LICENSE_KEY_ID            必填,当前签发密钥标识(如 2026-01)
+  JWT_SECRET                留空自动生成(持久化 DATA_DIR/jwt_secret)
+  LICENSE_KEY_ID            签发密钥标识(默认 2026-01)
   LICENSE_PRIVATE_KEY_PATH  私钥路径(默认 private/license.key)
   SERVER_ADDR               监听地址(默认 :3000)
   JWT_TTL                   JWT 有效期(默认 12h)
-  ADMIN_USERNAME            首次初始化管理员用户名
-  ADMIN_PASSWORD            首次初始化管理员密码(仅首次生效)
+  ADMIN_USERNAME            管理员用户名(默认 admin)
+  ADMIN_PASSWORD            留空自动生成并打印在日志里
+  DATA_DIR                  数据目录(默认 /data)
 `)
 }
 
@@ -272,6 +276,20 @@ func runMigrate() int {
 }
 
 // ---------- keygen 子命令 ----------
+
+// runPubkey 打印当前私钥对应的公钥(集成到 Docker_Manager_Go 用)。
+func runPubkey() int {
+	path := os.Getenv("LICENSE_PRIVATE_KEY_PATH")
+	if path == "" {
+		path = "private/license.key"
+	}
+	kp, err := crypto.LoadPrivateKey(path)
+	if err != nil {
+		log.Fatalf("load private key: %v (路径见 LICENSE_PRIVATE_KEY_PATH)", err)
+	}
+	fmt.Println(crypto.PublicKeyPEM(kp.Public))
+	return 0
+}
 
 func runKeygen(args []string) int {
 	outDir := "private"

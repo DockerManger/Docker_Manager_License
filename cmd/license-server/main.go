@@ -28,6 +28,14 @@ import (
 	"github.com/MinimaxFlora/Docker_Manager_License/internal/service"
 )
 
+// 构建信息:发布时由 ldflags 注入(Dockerfile/Makefile 的 -X 参数对应),
+// 本地开发/未打 tag 构建为 unknown。
+var (
+	Version   = "unknown"
+	Commit    = "unknown"
+	BuildTime = "unknown"
+)
+
 func main() {
 	log.SetFlags(log.LstdFlags | log.LUTC)
 

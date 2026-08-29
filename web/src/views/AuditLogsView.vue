@@ -69,7 +69,7 @@ async function load(p: number) {
   const res = await api.get<{ items: AuditLog[]; total: number }>(
     `/api/v1/admin/audit-logs?page=${p}&page_size=${pageSize}`,
   )
-  items.value = res.items
+  items.value = res.items || []
   total.value = res.total
 }
 

@@ -147,7 +147,7 @@ func (r *LicenseRepo) List(ctx context.Context, offset, limit int, status string
 		return nil, 0, err
 	}
 	defer rows.Close()
-	var out []*model.License
+	out := make([]*model.License, 0)
 	for rows.Next() {
 		l, err := scanLicense(rows)
 		if err != nil {
@@ -197,7 +197,7 @@ func (r *LicenseRepo) Revisions(ctx context.Context, licenseDBID string) ([]*mod
 		return nil, err
 	}
 	defer rows.Close()
-	var out []*model.LicenseRevision
+	out := make([]*model.LicenseRevision, 0)
 	for rows.Next() {
 		var rev model.LicenseRevision
 		if err := rows.Scan(&rev.ID, &rev.LicenseID, &rev.Revision, &rev.Payload,
@@ -266,7 +266,7 @@ func (r *AuditRepo) List(ctx context.Context, offset, limit int) ([]*model.Audit
 		return nil, 0, err
 	}
 	defer rows.Close()
-	var out []*model.AuditLog
+	out := make([]*model.AuditLog, 0)
 	for rows.Next() {
 		var e model.AuditLog
 		if err := rows.Scan(&e.ID, &e.Admin, &e.Action, &e.ResourceType, &e.ResourceID,

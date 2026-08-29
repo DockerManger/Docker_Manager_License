@@ -125,7 +125,7 @@ async function load() {
   const res = await api.get<{ license: License }>(`/api/v1/admin/licenses/${id}`)
   license.value = res.license
   const revs = await api.get<{ items: LicenseRevision[] }>(`/api/v1/admin/licenses/${id}/revisions`)
-  revisions.value = revs.items
+  revisions.value = revs.items || []
 }
 
 function openExtend() {

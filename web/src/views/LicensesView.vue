@@ -182,7 +182,7 @@ async function load(p: number, s: string) {
   const res = await api.get<{ items: License[]; total: number }>(
     `/api/v1/admin/licenses?page=${p}&page_size=${pageSize}${s ? `&status=${s}` : ''}`,
   )
-  items.value = res.items
+  items.value = res.items || []
   total.value = res.total
 }
 

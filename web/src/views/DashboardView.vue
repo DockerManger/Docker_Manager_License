@@ -71,7 +71,7 @@ onMounted(async () => {
   try {
     stats.value = await api.get('/api/v1/admin/stats')
     const page = await api.get<{ items: License[] }>('/api/v1/admin/licenses?page=1&page_size=8')
-    recent.value = page.items
+    recent.value = page.items || []
   } catch (e: any) {
     console.error(e)
   }

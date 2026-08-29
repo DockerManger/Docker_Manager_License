@@ -1,8 +1,7 @@
 name: Release
 
-# tag 触发(如 v1.0.0):构建并发布 Docker 镜像(ghcr.io)
-# 安全:镜像只含二进制与前端产物,私钥永远以 volume 挂载,绝不入镜像。
-on:
+# on 使用引号形式(GitHub 官方推荐,YAML 1.1 解析器会把裸 on 当布尔值)
+"on":
   push:
     tags:
       - 'v*'

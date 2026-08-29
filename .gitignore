@@ -21,3 +21,4 @@ web/dist/
 postgres-data/
 *.db
 *.sqlite
+*.tsbuildinfo

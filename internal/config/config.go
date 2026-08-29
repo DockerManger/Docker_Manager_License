@@ -12,12 +12,12 @@ import (
 
 // Config 服务端配置。
 type Config struct {
-	ServerAddr string // 监听地址,默认 :3000
+	ServerAddr  string // 监听地址,默认 :3000
 	DatabaseURL string // PostgreSQL DSN
 
-	DataDir          string // 数据目录(持久化 JWT secret 等),默认 /data
-	JWTSecret        string // HS256 签名密钥;为空则自动生成并持久化到 DataDir/jwt_secret
-	JWTTTL           time.Duration
+	DataDir   string // 数据目录(持久化 JWT secret 等),默认 /data
+	JWTSecret string // HS256 签名密钥;为空则自动生成并持久化到 DataDir/jwt_secret
+	JWTTTL    time.Duration
 
 	LicenseKeyID       string // 当前签发密钥标识,默认 2026-01
 	LicensePrivKeyPath string // Ed25519 私钥文件路径

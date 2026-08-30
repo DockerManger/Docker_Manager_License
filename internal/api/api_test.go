@@ -271,6 +271,14 @@ func TestLicenseLifecycle(t *testing.T) {
 		t.Fatalf("list total: %d", list.Total)
 	}
 
+	// 列表 + status 筛选(回归:COUNT 查询曾复用主查询的 $3 参数编号导致 42P18)
+	for _, s := range []string{"active", "expired", "revoked", "suspended"} {
+		w = doJSON(t, r, "GET", "/api/v1/admin/licenses?page=1&page_size=10&status="+s, token, nil)
+		if w.Code != 200 {
+			t.Fatalf("list?status=%s: %d %s", s, w.Code, w.Body.String())
+		}
+	}
+
 	// 延期 → 新修订
 	w = doJSON(t, r, "POST", "/api/v1/admin/licenses/"+licenseID+"/extend", token, map[string]any{
 		"days": 30, "reason": "renewal",

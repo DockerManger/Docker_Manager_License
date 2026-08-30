@@ -67,10 +67,6 @@
         <Button variant="icon" class="lg:hidden" @click="mobileOpen = true">
           <Menu class="size-4" />
         </Button>
-        <div class="min-w-0">
-          <h1 class="text-[14.5px] font-semibold text-text truncate">{{ pageTitle }}</h1>
-          <p v-if="pageDesc" class="text-[11px] text-muted truncate">{{ pageDesc }}</p>
-        </div>
         <div class="ml-auto flex items-center gap-1.5">
           <ToggleLocale />
           <ThemeToggle />
@@ -192,15 +188,6 @@ function isActive(item: NavItem) {
   if (item.to === '/dashboard') return route.path === '/dashboard'
   return route.path.startsWith(item.to)
 }
-
-const pageTitle = computed(() => {
-  const key = route.meta.titleKey as string
-  return key ? t(key) : ''
-})
-const pageDesc = computed(() => {
-  const key = route.meta.descKey as string
-  return key ? t(key) : ''
-})
 
 function logout() {
   clearToken()

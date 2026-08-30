@@ -139,17 +139,30 @@ func (r *LicenseRepo) GetByDBID(ctx context.Context, id string) (*model.License,
 		`SELECT `+licenseCols+` FROM licenses l`+licenseJoin+` WHERE l.id = $1`, id))
 }
 
-// List 分页列表(按创建时间倒序)。
+// List 分页列表(按创建时间倒序)。status 筛选:active/expired/revoked/suspended,空 = 全部。
+// 注意:expired 是动态状态(按 expires_at 判断,数据库 status 列不维护),其余为列值过滤。
 func (r *LicenseRepo) List(ctx context.Context, offset, limit int, status string) ([]*model.License, int, error) {
 	var total int
 	where := ""
 	args := []any{limit, offset}
-	if status != "" {
+	countWhere := ""
+	countArgs := []any{}
+	switch status {
+	case model.StatusExpired:
+		// 过期 = 到期时间已过且未被吊销(动态计算,无参数)
+		where = " WHERE l.expires_at < extract(epoch from now())::bigint AND l.status <> 'revoked'"
+		countWhere = where
+	case "":
+		// 全部,无条件
+	default:
+		// 主查询:limit=$1 offset=$2 status=$3
 		where = " WHERE l.status = $3"
 		args = append(args, status)
+		// COUNT 查询独立编号:参数从 $1 开始(与主查询共用 $3 会导致 42P18 参数无法绑定)
+		countWhere = " WHERE l.status = $1"
+		countArgs = append(countArgs, status)
 	}
-	if err := r.pool.QueryRow(ctx, `SELECT COUNT(*) FROM licenses l`+where,
-		append([]any{}, args[2:]...)...).Scan(&total); err != nil {
+	if err := r.pool.QueryRow(ctx, `SELECT COUNT(*) FROM licenses l`+countWhere, countArgs...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 	rows, err := r.pool.Query(ctx, `SELECT `+licenseCols+` FROM licenses l`+licenseJoin+where+

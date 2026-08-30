@@ -1,6 +1,8 @@
 # Docker Manager License
 
 > [Docker_Manager_Go](https://github.com/DockerManger/Docker_Manager_Go) 的官方 License 签发、管理与授权服务端。
+>
+> 更新说明见 [CHANGELOG.md](CHANGELOG.md)。
 
 ```
 Docker_Manager_License          Docker_Manager_Go (开源)
@@ -30,7 +32,17 @@ Docker_Manager_License          Docker_Manager_Go (开源)
 | `internal/service` | 业务层:签发/延期/吊销/修订/审计 |
 | `internal/api` | Gin 路由(公开 API 与管理 API 物理分离) |
 | `internal/database` | PostgreSQL + 版本化 migration(`internal/database/migrations/`) |
-| `web/` | Vue 3 + TypeScript 管理后台 |
+| `web/` | Vue 3 + TypeScript 管理后台(shadcn-vue,14 语言 i18n) |
+
+## 管理后台 UI
+
+- **登录页背景图**:内置壁纸(`web/public/bg.jpg`,与 Docker_Manager_Go 同一张),1Panel 风格
+  背景图 + 深色遮罩,暗色/亮色主题下均适配;图片加载失败自动回退纯色背景
+- **右上角工具栏**:主题切换(明/暗,圆形扩散过渡)+ 语言切换(14 语言下拉,含 RTL),
+  与 Docker_Manager_Go 登录页交互一致;登录后主界面右上角同样提供主题与语言切换
+- **多语言**:14 种语言(zh-CN / zh-TW / en / ja / ko / ru / vi / es / id / uk / tr /
+  pt-BR / ar / fa),浏览器语言自动检测,选择持久化
+- **深色/浅色主题**:Design Tokens 驱动,默认深色,切换带圆形扩散过渡动画
 
 ## 安全设计
 

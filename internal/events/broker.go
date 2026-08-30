@@ -5,7 +5,7 @@
 // 提交成功后才 Publish(事务一致性,§19)。
 //
 // 设计要点:
-//   - 按 activation_id(展示 ID,ACT-*)路由;activation_id = '' 的事件为全局广播,
+//   - 按 activation_id(展示 ID,ACT-*)路由;activation_id = ” 的事件为全局广播,
 //     所有订阅者都能收到(如 version_policy.changed)
 //   - 线程安全;订阅/取消订阅/发布均可并发
 //   - 慢消费者直接丢弃(有持久化 Event Store 兜底,客户端重连后按 Last-Event-ID 补齐)

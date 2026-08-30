@@ -6,7 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/DockerManger/Docker_Manager_License/internal/model"
+	"github.com/DockOrae/DockOrae-Auth/internal/model"
 )
 
 // ---------- 设备管理(Admin,全部需 JWT) ----------

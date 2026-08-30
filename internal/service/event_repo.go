@@ -7,7 +7,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/DockerManger/Docker_Manager_License/internal/model"
+	"github.com/DockOrae/DockOrae-Auth/internal/model"
 )
 
 // ---------- License 事件类型(V3 Event-Driven,SSE 主动同步) ----------

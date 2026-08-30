@@ -15,7 +15,7 @@ package events
 import (
 	"sync"
 
-	"github.com/DockerManger/Docker_Manager_License/internal/model"
+	"github.com/DockOrae/DockOrae-Auth/internal/model"
 )
 
 // Broker 内存事件发布/订阅。

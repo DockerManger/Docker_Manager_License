@@ -19,8 +19,8 @@
 # ============================================================
 services:
   license-server:
-    image: zhaoweiwen123/docker_manager_license:latest
-    container_name: docker-manager-license
+    image: zhaoweiwen123/dockorae-auth:latest
+    container_name: dockorae-auth
     restart: unless-stopped
     ports:
       - "80:80"

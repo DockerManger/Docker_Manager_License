@@ -8,7 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/DockerManger/Docker_Manager_License/internal/service"
+	"github.com/DockOrae/DockOrae-Auth/internal/service"
 )
 
 // ---------- 签发 ----------

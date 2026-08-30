@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DockerManger/Docker_Manager_License/internal/crypto"
+	"github.com/DockOrae/DockOrae-Auth/internal/crypto"
 )
 
 func testKeyPair(t *testing.T) *crypto.KeyPair {

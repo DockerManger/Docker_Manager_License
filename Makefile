@@ -72,7 +72,7 @@ test:
 	$(GO) test -race ./internal/...
 
 docker:
-	docker build -t docker-manager-license:$(VERSION) .
+	docker build -t dockorae-auth:$(VERSION) .
 
 up:
 	docker compose -f deploy/docker-compose.yml up -d

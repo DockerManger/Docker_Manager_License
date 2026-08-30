@@ -6,8 +6,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/DockerManger/Docker_Manager_License/internal/auth"
-	"github.com/DockerManger/Docker_Manager_License/internal/service"
+	"github.com/DockOrae/DockOrae-Auth/internal/auth"
+	"github.com/DockOrae/DockOrae-Auth/internal/service"
 )
 
 // ---------- 在线授权闭环(V3 公开 API,供 Docker_Manager_Go 客户端调用) ----------

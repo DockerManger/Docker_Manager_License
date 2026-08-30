@@ -2,7 +2,7 @@ openapi: 3.0.3
 info:
   title: Docker Manager License API
   description: >-
-    Docker_Manager_License 签发/验证服务。外部 Base URL:
+    DockOrae-Auth 签发/验证服务。外部 Base URL:
     https://manager.kejizero.xyz/license-api(反代剥离 /license-api 前缀)。
     V1(HMAC)已完全移除;License V2.1(Ed25519)+ Activation Token 体系。
     详细契约见 docs/integration.md 与 docs/license-schema.json。

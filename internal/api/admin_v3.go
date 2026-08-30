@@ -7,9 +7,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/DockerManger/Docker_Manager_License/internal/license"
-	"github.com/DockerManger/Docker_Manager_License/internal/model"
-	"github.com/DockerManger/Docker_Manager_License/internal/service"
+	"github.com/DockOrae/DockOrae-Auth/internal/license"
+	"github.com/DockOrae/DockOrae-Auth/internal/model"
+	"github.com/DockOrae/DockOrae-Auth/internal/service"
 )
 
 // ---------- Customers(V3:客户管理) ----------

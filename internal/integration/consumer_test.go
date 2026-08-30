@@ -2,7 +2,7 @@
 //
 // 场景:模拟 Docker_Manager_Go 消费端的行为:
 //
-//	签发端(Docker_Manager_License)用私钥签发 Key
+//	签发端(DockOrae-Auth)用私钥签发 Key
 //	→ 消费端(模拟 Docker_Manager_Go)只持公钥,离线本地验证
 //	→ 真伪判断、过期判断、feature 判断、篡改拒绝
 //
@@ -19,8 +19,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DockerManger/Docker_Manager_License/internal/crypto"
-	"github.com/DockerManger/Docker_Manager_License/internal/license"
+	"github.com/DockOrae/DockOrae-Auth/internal/crypto"
+	"github.com/DockOrae/DockOrae-Auth/internal/license"
 )
 
 func ed25519Verify(pub, msg, sig []byte) bool {

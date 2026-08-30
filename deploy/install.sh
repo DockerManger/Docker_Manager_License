@@ -3,7 +3,7 @@
 # Docker Manager License — 一键部署脚本(Compose 单容器全包)
 #
 # 一条命令部署(仓库已公开):
-#   curl -fsSL https://github.com/DockerManger/Docker_Manager_License/raw/refs/heads/master/deploy/install.sh | bash
+#   curl -fsSL https://github.com/DockOrae/DockOrae-Auth/raw/refs/heads/master/deploy/install.sh | bash
 #
 # 等价于:
 #   docker compose up -d
@@ -20,7 +20,7 @@
 #   - 部署完成后打印:访问地址 / 管理员账号 / 初始密码 / 公钥
 #
 # 参数(通过环境变量):
-#   DML_DIR=~/dml         部署目录(默认 ~/docker-manager-license)
+#   DML_DIR=~/dml         部署目录(默认 ~/dockorae-auth)
 #   DML_PORT=8080          对外端口(默认 80)
 #   DML_FORCE=1            强制重新部署
 #   DML_MIRROR=<registry>  镜像加速源(如 https://docker.m.daocloud.io)
@@ -28,17 +28,17 @@
 set -e
 
 # ---------- 配置 ----------
-INSTALL_DIR="${DML_DIR:-$HOME/docker-manager-license}"
+INSTALL_DIR="${DML_DIR:-$HOME/dockorae-auth}"
 PORT="${DML_PORT:-80}"
 FORCE="${DML_FORCE:-0}"
 MIRROR="${DML_MIRROR:-}"
-IMAGE="zhaoweiwen123/docker_manager_license:latest"
+IMAGE="zhaoweiwen123/dockorae-auth:latest"
 # 仓库已公开,compose 直接从 GitHub 拉取;优先 github.com raw 端点(绕过 raw CDN 滞后)
-GH_RAW="https://github.com/DockerManger/Docker_Manager_License/raw/refs/heads/master/deploy/docker-compose.yml"
+GH_RAW="https://github.com/DockOrae/DockOrae-Auth/raw/refs/heads/master/deploy/docker-compose.yml"
 COMPOSE_URLS=(
   "${DML_MIRROR:+$DML_MIRROR/}$GH_RAW"
   "$GH_RAW"
-  "https://raw.githubusercontent.com/DockerManger/Docker_Manager_License/master/deploy/docker-compose.yml"
+  "https://raw.githubusercontent.com/DockOrae/DockOrae-Auth/master/deploy/docker-compose.yml"
 )
 
 c() { printf '\033[36m%s\033[0m\n' "$*"; }
@@ -100,7 +100,7 @@ fi
 # ---------- 5. 拉取镜像(可选加速源) ----------
 c "==> 拉取镜像 $IMAGE ..."
 if [ -n "$MIRROR" ]; then
-  MIRROR_IMG="${MIRROR%/}/zhaoweiwen123/docker_manager_license:latest"
+  MIRROR_IMG="${MIRROR%/}/zhaoweiwen123/dockorae-auth:latest"
   warn "使用加速源 $MIRROR_IMG"
   docker pull "$MIRROR_IMG" || { warn "加速源拉取失败,改用官方源"; docker pull "$IMAGE"; }
   docker tag "$MIRROR_IMG" "$IMAGE" 2>/dev/null || true

@@ -1,4 +1,4 @@
-// license-server — Docker_Manager_License 签发服务端。
+// license-server — DockOrae-Auth 签发服务端。
 //
 // 子命令:
 //
@@ -24,13 +24,13 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/DockerManger/Docker_Manager_License/internal/api"
-	"github.com/DockerManger/Docker_Manager_License/internal/auth"
-	"github.com/DockerManger/Docker_Manager_License/internal/config"
-	"github.com/DockerManger/Docker_Manager_License/internal/crypto"
-	"github.com/DockerManger/Docker_Manager_License/internal/database"
-	"github.com/DockerManger/Docker_Manager_License/internal/events"
-	"github.com/DockerManger/Docker_Manager_License/internal/service"
+	"github.com/DockOrae/DockOrae-Auth/internal/api"
+	"github.com/DockOrae/DockOrae-Auth/internal/auth"
+	"github.com/DockOrae/DockOrae-Auth/internal/config"
+	"github.com/DockOrae/DockOrae-Auth/internal/crypto"
+	"github.com/DockOrae/DockOrae-Auth/internal/database"
+	"github.com/DockOrae/DockOrae-Auth/internal/events"
+	"github.com/DockOrae/DockOrae-Auth/internal/service"
 )
 
 // 构建信息:发布时由 ldflags 注入(Dockerfile/Makefile 的 -X 参数对应),

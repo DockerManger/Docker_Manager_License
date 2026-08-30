@@ -8,8 +8,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/DockerManger/Docker_Manager_License/internal/model"
-	"github.com/DockerManger/Docker_Manager_License/internal/service"
+	"github.com/DockOrae/DockOrae-Auth/internal/model"
+	"github.com/DockOrae/DockOrae-Auth/internal/service"
 )
 
 // ---------- 统一错误结构 ----------

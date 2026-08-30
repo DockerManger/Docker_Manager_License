@@ -6,9 +6,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/DockerManger/Docker_Manager_License/internal/auth"
-	"github.com/DockerManger/Docker_Manager_License/internal/events"
-	"github.com/DockerManger/Docker_Manager_License/internal/service"
+	"github.com/DockOrae/DockOrae-Auth/internal/auth"
+	"github.com/DockOrae/DockOrae-Auth/internal/events"
+	"github.com/DockOrae/DockOrae-Auth/internal/service"
 )
 
 // Deps API 依赖集合(构造时注入)。

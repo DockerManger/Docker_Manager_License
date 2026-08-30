@@ -9,7 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
-	"github.com/DockerManger/Docker_Manager_License/internal/model"
+	"github.com/DockOrae/DockOrae-Auth/internal/model"
 )
 
 // ---------- ActivationRepository ----------

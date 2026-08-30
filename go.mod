@@ -1,4 +1,4 @@
-module github.com/DockerManger/Docker_Manager_License
+module github.com/DockOrae/DockOrae-Auth
 
 go 1.27.0
 

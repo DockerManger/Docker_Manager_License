@@ -7,8 +7,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/DockerManger/Docker_Manager_License/internal/auth"
-	"github.com/DockerManger/Docker_Manager_License/internal/model"
+	"github.com/DockOrae/DockOrae-Auth/internal/auth"
+	"github.com/DockOrae/DockOrae-Auth/internal/model"
 )
 
 // ---------- 登录 ----------

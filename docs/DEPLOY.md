@@ -20,12 +20,12 @@
 SSH 登录服务器后,执行:
 
 ```bash
-curl -fsSL https://github.com/DockerManger/Docker_Manager_License/raw/refs/heads/master/deploy/install.sh | bash
+curl -fsSL https://github.com/DockOrae/DockOrae-Auth/raw/refs/heads/master/deploy/install.sh | bash
 ```
 
 等它打印出「✓ 部署完成」之类的字样。它会自动:
 
-- 在 `~/docker-manager-license` 建好目录和 compose 文件
+- 在 `~/dockorae-auth` 建好目录和 compose 文件
 - 拉镜像并启动(对外只开 **80 端口**,内置 nginx + PostgreSQL)
 - 首次启动自动生成管理员密码、JWT secret、Ed25519 私钥
 
@@ -34,7 +34,7 @@ curl -fsSL https://github.com/DockerManger/Docker_Manager_License/raw/refs/heads
 ### 2. 查看管理员密码(只打印一次)
 
 ```bash
-cd ~/docker-manager-license && docker compose logs license-server | grep -E "用户名|密码"
+cd ~/dockorae-auth && docker compose logs license-server | grep -E "用户名|密码"
 ```
 
 记下「密码:」后面的内容(例如 `J93gKMMCsb77RNym`)。这是管理后台的登录密码。
@@ -46,13 +46,13 @@ License Server 首次启动会自动生成一把随机私钥。**为了让 Docke
 在**你的电脑**(不是服务器)上,把仓库的私钥上传到服务器:
 
 ```bash
-scp /d/text/Docker_Manager_License/private/license.key root@<你的IP>:/root/docker-manager-license/private/license.key.new
+scp /d/text/DockOrae-Auth/private/license.key root@<你的IP>:/root/dockorae-auth/private/license.key.new
 ```
 
 然后在服务器上替换并重启:
 
 ```bash
-cd /root/docker-manager-license/private
+cd /root/dockorae-auth/private
 cp license.key license.key.bak                # 备份自动生成的旧钥
 mv license.key.new license.key
 chmod 600 license.key
@@ -66,7 +66,7 @@ docker compose logs license-server | grep -A1 "PUBLIC KEY"
 ```
 
 > 跳过这步的后果:面板激活时会报验签失败 / 许可证不可用。
-> 如果私钥文件还没在电脑上,先 `cd /d/text/Docker_Manager_License && git pull`,私钥在 `private/` 目录(已被 .gitignore 排除,不会传到 GitHub)。
+> 如果私钥文件还没在电脑上,先 `cd /d/text/DockOrae-Auth && git pull`,私钥在 `private/` 目录(已被 .gitignore 排除,不会传到 GitHub)。
 
 ### 4. 访问管理后台
 
@@ -172,11 +172,11 @@ docker compose up -d --force-recreate
 
 | 想做什么 | 命令 |
 |---|---|
-| 看服务状态 | `cd ~/docker-manager-license && docker compose ps` |
+| 看服务状态 | `cd ~/dockorae-auth && docker compose ps` |
 | 看日志(含公钥) | `docker compose logs -f license-server` |
 | 重启服务 | `docker compose restart license-server` |
 | 更新到新版 | `docker compose pull && docker compose up -d` |
-| 重新部署(清空重来) | `DML_FORCE=1 bash ~/docker-manager-license/deploy-install.sh`(或先 `docker compose down` 再跑安装脚本) |
+| 重新部署(清空重来) | `DML_FORCE=1 bash ~/dockorae-auth/deploy-install.sh`(或先 `docker compose down` 再跑安装脚本) |
 
 ## 常见问题
 

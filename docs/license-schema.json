@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://manager.kejizero.xyz/license-api/docs/license-schema.json",
   "title": "Docker Manager License V2 Contract (V2.1)",
-  "description": "License Key 签名载荷规范。Docker_Manager_License(签发端)与 Docker_Manager_Go(消费端)之间唯一的正式契约。V1(HMAC)已完全移除,只接受 V2 Ed25519。",
+  "description": "License Key 签名载荷规范。DockOrae-Auth(签发端)与 Docker_Manager_Go(消费端)之间唯一的正式契约。V1(HMAC)已完全移除,只接受 V2 Ed25519。",
   "type": "object",
   "required": [
     "version",

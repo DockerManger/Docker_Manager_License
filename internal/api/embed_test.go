@@ -8,7 +8,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/DockerManger/Docker_Manager_License/web"
+	"github.com/DockOrae/DockOrae-Auth/web"
 )
 
 // TestEmbeddedFrontend 单二进制嵌入的前端可访问(根路径/SPA 路由)。

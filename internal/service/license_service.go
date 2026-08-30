@@ -9,10 +9,10 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/DockerManger/Docker_Manager_License/internal/crypto"
-	"github.com/DockerManger/Docker_Manager_License/internal/events"
-	"github.com/DockerManger/Docker_Manager_License/internal/license"
-	"github.com/DockerManger/Docker_Manager_License/internal/model"
+	"github.com/DockOrae/DockOrae-Auth/internal/crypto"
+	"github.com/DockOrae/DockOrae-Auth/internal/events"
+	"github.com/DockOrae/DockOrae-Auth/internal/license"
+	"github.com/DockOrae/DockOrae-Auth/internal/model"
 )
 
 // uuidRe 标准 UUID 格式(8-4-4-4-12 十六进制),用于区分数据库 UUID 与其他 ID 字符串。

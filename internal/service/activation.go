@@ -9,9 +9,9 @@ import (
 	"errors"
 	"time"
 
-	"github.com/DockerManger/Docker_Manager_License/internal/crypto"
-	"github.com/DockerManger/Docker_Manager_License/internal/license"
-	"github.com/DockerManger/Docker_Manager_License/internal/model"
+	"github.com/DockOrae/DockOrae-Auth/internal/crypto"
+	"github.com/DockOrae/DockOrae-Auth/internal/license"
+	"github.com/DockOrae/DockOrae-Auth/internal/model"
 )
 
 // 激活 token 字节数(hex 编码 → 64 位字符)。

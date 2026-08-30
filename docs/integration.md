@@ -1,6 +1,6 @@
 # Docker_Manager_Go 集成文档(License V2.1 / V3 架构契约)
 
-> 本文档是 **Docker_Manager_License(签发端)** 与 **Docker_Manager_Go(消费端)** 之间唯一的正式契约。
+> 本文档是 **DockOrae-Auth(签发端)** 与 **Docker_Manager_Go(消费端)** 之间唯一的正式契约。
 > 任何一方的修改必须同步另一方,否则授权失效。本仓库 `internal/integration/consumer_test.go`
 > 用独立实现模拟了消费端验证逻辑,改造 Docker_Manager_Go 时以此为准。
 >
@@ -11,7 +11,7 @@
 ## 1. 数据流
 
 ```
-Docker_Manager_License                    Docker_Manager_Go (开源)
+DockOrae-Auth                    Docker_Manager_Go (开源)
         │                                        │
    Ed25519 私钥                                 Ed25519 公钥(内嵌,key_id 注册表)
         │                                        │

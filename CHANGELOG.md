@@ -30,7 +30,7 @@
     server_settings
   - 新管理端点:/customers、/subscriptions、/security-events、/settings(GET/PUT)
 - **客户与订阅管理**:签发 API 透传 `customer_id` / `subscription_id`(V2.1 契约字段)
-- **仓库迁移到 DockerManger 组织**:模块路径 / 安装脚本 / GHCR 镜像 / 文档链接全部更新
+- **仓库迁移到 DockOrae 组织**:模块路径 / 安装脚本 / GHCR 镜像 / 文档链接全部更新
 
 ### 🐛 修复
 
@@ -86,6 +86,6 @@
 
 ---
 
-[Unreleased]: https://github.com/DockerManger/Docker_Manager_License/compare/v1.0.1...master
-[v1.0.1]: https://github.com/DockerManger/Docker_Manager_License/compare/v1.0.0...v1.0.1
-[v1.0.0]: https://github.com/DockerManger/Docker_Manager_License/releases/tag/v1.0.0
+[Unreleased]: https://github.com/DockOrae/DockOrae-Auth/compare/v1.0.1...master
+[v1.0.1]: https://github.com/DockOrae/DockOrae-Auth/compare/v1.0.0...v1.0.1
+[v1.0.0]: https://github.com/DockOrae/DockOrae-Auth/releases/tag/v1.0.0

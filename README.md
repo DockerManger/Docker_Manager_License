@@ -1,11 +1,11 @@
 # Docker Manager License
 
-> [Docker_Manager_Go](https://github.com/DockerManger/Docker_Manager_Go) 的官方 License 签发、管理与授权服务端。
+> [Docker_Manager_Go](https://github.com/DockOrae/Docker_Manager_Go) 的官方 License 签发、管理与授权服务端。
 >
 > 更新说明见 [CHANGELOG.md](CHANGELOG.md)。
 
 ```
-Docker_Manager_License          Docker_Manager_Go (开源)
+DockOrae-Auth          Docker_Manager_Go (开源)
 ┌─────────────────────┐         ┌─────────────────────┐
 │ Admin Panel (Vue3)  │         │ Ed25519 Public Key  │
 │ License API (Gin)   │◄─激活───│ License Verify      │
@@ -92,14 +92,14 @@ payload = {
 ### 一键部署(推荐)
 
 ```bash
-curl -fsSL https://github.com/DockerManger/Docker_Manager_License/raw/refs/heads/master/deploy/install.sh | bash
+curl -fsSL https://github.com/DockOrae/DockOrae-Auth/raw/refs/heads/master/deploy/install.sh | bash
 ```
 
-脚本自动:检测环境 → 创建部署目录(`~/docker-manager-license`)→ 下载 compose → 拉镜像 → 启动 → 打印管理员账号/密码/公钥。
+脚本自动:检测环境 → 创建部署目录(`~/dockorae-auth`)→ 下载 compose → 拉镜像 → 启动 → 打印管理员账号/密码/公钥。
 
 可选参数(环境变量):
 ```bash
-DML_DIR=~/dml DML_PORT=8080 curl -fsSL https://github.com/DockerManger/Docker_Manager_License/raw/refs/heads/master/deploy/install.sh | bash
+DML_DIR=~/dml DML_PORT=8080 curl -fsSL https://github.com/DockOrae/DockOrae-Auth/raw/refs/heads/master/deploy/install.sh | bash
 # 国内网络加速: DML_MIRROR=https://docker.m.daocloud.io ...
 # 重新部署: DML_FORCE=1 ...
 ```

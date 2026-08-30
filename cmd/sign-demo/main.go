@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/DockerManger/Docker_Manager_License/internal/crypto"
-	"github.com/DockerManger/Docker_Manager_License/internal/license"
+	"github.com/DockOrae/DockOrae-Auth/internal/crypto"
+	"github.com/DockOrae/DockOrae-Auth/internal/license"
 )
 
 func main() {

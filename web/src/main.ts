@@ -1,6 +1,10 @@
 import { createApp } from 'vue'
 import App from './App.vue'
 import router from './router'
+import i18n from './i18n'
+import { initTheme } from './lib/theme'
 import './style.css'
 
-createApp(App).use(router).mount('#app')
+initTheme()
+
+createApp(App).use(router).use(i18n).mount('#app')

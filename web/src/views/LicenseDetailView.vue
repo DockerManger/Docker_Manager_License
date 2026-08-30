@@ -42,8 +42,13 @@
         <Button v-if="license.status === 'active'" variant="ghost" size="sm" @click="showExtend = true">
           <Clock3 class="size-3.5" /> {{ $t('detail.extend') }}
         </Button>
-        <Button v-if="license.status === 'active'" variant="destructive" size="sm" @click="openRevoke">
+        <!-- 吊销:ACTIVE / EXPIRED(destructive)-->
+        <Button v-if="license.status === 'active' || license.status === 'expired'" variant="destructive" size="sm" @click="openRevoke">
           <Ban class="size-3.5" /> {{ $t('detail.revoke') }}
+        </Button>
+        <!-- 删除:仅 REVOKED(destructive)-->
+        <Button v-if="license.status === 'revoked'" variant="destructive" size="sm" @click="openDelete">
+          <Trash2 class="size-3.5" /> {{ $t('delete.title') }}
         </Button>
       </div>
     </div>
@@ -60,6 +65,43 @@
         <div v-if="info.sub" class="text-[11px] mt-1" :class="info.subClass">{{ info.sub }}</div>
       </Card>
     </div>
+
+    <!-- Binding 状态(Binding 与 License 状态分离:ACTIVE 可以 BOUND 或 UNBOUND)-->
+    <Card class="p-5">
+      <h3 class="text-[13.5px] font-semibold mb-3 flex items-center gap-2">
+        <Link2 class="size-4 text-muted" /> {{ $t('binding.title') }}
+        <span
+          class="inline-flex items-center gap-1.5 text-[12px] font-medium px-2.5 py-0.5 rounded-full"
+          :class="activeCount > 0 ? 'text-ok bg-ok/10' : 'text-muted bg-surface2'"
+        >
+          <span class="w-1.5 h-1.5 rounded-full" :class="activeCount > 0 ? 'bg-ok' : 'bg-muted/60'" />
+          {{ activeCount > 0 ? $t('binding.bound') : $t('binding.unbound') }}
+        </span>
+      </h3>
+      <!-- BOUND:显示当前绑定设备信息 -->
+      <div v-if="activeCount > 0" class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div v-for="a in boundActivations" :key="a.id" class="rounded-[0.5rem] border border-line bg-surface2/40 p-3.5">
+          <div class="text-[11px] text-muted mb-1.5 flex items-center gap-1.5">
+            <MonitorSmartphone class="size-3" /> {{ $t('binding.device') }} #{{ a.id }}
+          </div>
+          <div class="font-mono text-[12px] text-text break-all mb-1">{{ a.device_id }}</div>
+          <div v-if="a.device_name" class="text-[12px] text-muted">{{ a.device_name }}</div>
+          <div class="text-[11px] text-muted mt-1.5">
+            {{ $t('detail.lastSeen') }}: {{ fmtDateTimeStr(a.last_seen_at) }}
+          </div>
+        </div>
+      </div>
+      <!-- UNBOUND:空状态提示 -->
+      <div v-else class="flex flex-col items-center justify-center py-6 text-center">
+        <span class="w-10 h-10 rounded-full bg-surface2 flex items-center justify-center mb-2">
+          <Unlink class="size-4 text-muted" />
+        </span>
+        <p class="text-[12.5px] text-muted">{{ $t('binding.unboundDesc') }}</p>
+        <p v-if="license.status === 'active'" class="text-[11.5px] text-muted mt-0.5">
+          {{ $t('binding.canReactivate') }}
+        </p>
+      </div>
+    </Card>
 
     <!-- 功能 -->
     <Card class="p-5">
@@ -118,16 +160,17 @@
             <TableCell class="text-muted text-[12px]">{{ fmtDateTimeStr(a.activated_at) }}</TableCell>
             <TableCell class="text-muted text-[12px]">{{ fmtDateTimeStr(a.last_seen_at) }}</TableCell>
             <TableCell class="text-right">
+              <!-- 精确解绑该台设备(只影响该台 Docker Manager,只通知该台;License 保持 ACTIVE)-->
               <Button
                 v-if="a.status === 'active'"
-                variant="icon"
+                variant="outline"
                 size="sm"
-                class="text-danger"
+                class="!text-warn !border-warn/40 hover:!bg-warn/10 !h-7 !px-2.5 !text-[12px]"
                 :title="$t('detail.deactivate')"
                 :disabled="busy"
                 @click="openDeactivate(a)"
               >
-                <Unlink class="size-3.5" />
+                <Unlink class="size-3" /> {{ $t('detail.deactivate') }}
               </Button>
             </TableCell>
           </TableRow>
@@ -269,12 +312,12 @@
       </AlertDialogContent>
     </AlertDialog>
 
-    <!-- 解绑确认 -->
+    <!-- 解绑确认(单设备:精确解绑该台 Docker Manager,只通知该台) -->
     <AlertDialog :open="!!deactivateTarget" @update:open="(v) => !v && (deactivateTarget = null)">
       <AlertDialogContent class="sm:max-w-md">
         <div class="px-5 py-4">
           <div class="flex items-center gap-3 mb-3">
-            <span class="w-9 h-9 rounded-xl bg-danger/15 text-danger flex items-center justify-center shrink-0">
+            <span class="w-9 h-9 rounded-xl bg-warn/15 text-warn flex items-center justify-center shrink-0">
               <Unlink class="size-4" />
             </span>
             <AlertDialogTitle class="text-[14.5px] font-semibold">{{ $t('detail.deactivateTitle') }}</AlertDialogTitle>
@@ -287,9 +330,37 @@
         </div>
         <AlertDialogFooter>
           <AlertDialogCancel>{{ $t('common.cancel') }}</AlertDialogCancel>
-          <AlertDialogAction variant="destructive" :disabled="busy" @click="deactivate">
+          <AlertDialogAction variant="warning" :disabled="busy" @click="deactivate">
             <Loader2 v-if="busy" class="size-3.5 animate-spin" />
             {{ $t('detail.deactivateConfirm') }}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+
+    <!-- 永久删除确认(仅 REVOKED;后端强制校验) -->
+    <AlertDialog :open="showDelete" @update:open="(v) => !v && (showDelete = false)">
+      <AlertDialogContent class="sm:max-w-md">
+        <div class="px-5 py-4">
+          <div class="flex items-center gap-3 mb-3">
+            <span class="w-9 h-9 rounded-xl bg-danger/15 text-danger flex items-center justify-center shrink-0">
+              <Trash2 class="size-4" />
+            </span>
+            <AlertDialogTitle class="text-[14.5px] font-semibold">{{ $t('delete.title') }}</AlertDialogTitle>
+          </div>
+          <AlertDialogDescription class="text-[12.5px] text-muted leading-relaxed">
+            {{ $t('delete.desc', { id: license.license_id }) }}
+            <br />
+            {{ $t('delete.desc2') }}
+            <br />
+            {{ $t('delete.desc3') }}
+          </AlertDialogDescription>
+        </div>
+        <AlertDialogFooter>
+          <AlertDialogCancel>{{ $t('common.cancel') }}</AlertDialogCancel>
+          <AlertDialogAction variant="destructive" :disabled="busy" @click="deleteLicense">
+            <Loader2 v-if="busy" class="size-3.5 animate-spin" />
+            {{ $t('delete.confirm') }}
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
@@ -299,11 +370,11 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import {
   Ban, CalendarClock, ChevronLeft, Clock3, Download, FileJson, FileKey, Fingerprint,
-  History, KeyRound, Loader2, MonitorSmartphone, RotateCcw, RefreshCw, Server, Unlink,
+  History, KeyRound, Link2, Loader2, MonitorSmartphone, RotateCcw, RefreshCw, Server, Trash2, Unlink,
   User, type LucideIcon,
 } from '@lucide/vue'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogTitle } from '@/components/ui/alert-dialog'
@@ -325,6 +396,7 @@ import { toastErr, toastOk } from '../lib/toast'
 
 const { t } = useI18n()
 const route = useRoute()
+const router = useRouter()
 const license = ref<License | null>(null)
 const revisions = ref<LicenseRevision[]>([])
 const activations = ref<Activation[]>([])
@@ -347,8 +419,13 @@ const deactivateTarget = ref<Activation | null>(null)
 // 用普通变量承载目标,闭包捕获,不受对话框关闭影响。
 let pendingDeactivate: Activation | null = null
 
+// 永久删除(boolean ref 不受 AlertDialogAction 竞态影响)
+const showDelete = ref(false)
+
 const isExpired = computed(() => !!license.value && license.value.expires_at > 0 && license.value.expires_at * 1000 < Date.now())
 const activeCount = computed(() => activations.value.filter((a) => a.status === 'active').length)
+// 当前绑定设备(Binding 区块展示)
+const boundActivations = computed(() => activations.value.filter((a) => a.status === 'active'))
 
 const infoCards = computed(() => {
   const l = license.value!
@@ -473,6 +550,26 @@ async function deactivate() {
     load()
   } catch (e: any) {
     toastErr(e?.message || t('detail.extendFailed'))
+  } finally {
+    busy.value = false
+  }
+}
+
+// 永久删除(仅 REVOKED;后端强制校验 status == revoked)
+function openDelete() {
+  showDelete.value = true
+}
+
+async function deleteLicense() {
+  busy.value = true
+  try {
+    await api.del(`/api/v1/admin/licenses/${license.value!.license_id}`)
+    toastOk(t('delete.successToast'))
+    showDelete.value = false
+    // 已删除:返回列表
+    router.push('/licenses')
+  } catch (e: any) {
+    toastErr(e?.message || t('delete.failed'))
   } finally {
     busy.value = false
   }

@@ -139,7 +139,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
-  AlertTriangle, CheckCircle2, Clock3, KeyRound, RefreshCw, ShieldX, TicketX, UserPlus,
+  AlertTriangle, CheckCircle2, Clock3, KeyRound, Link2, RefreshCw, ShieldX, TicketX, UserPlus,
   type LucideIcon,
 } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
@@ -166,8 +166,9 @@ const total = computed(() => stats.value?.total || 0)
 
 const statCards = computed(() => {
   const active = byStatus('active')
-  const expired = byStatus('expired')
   const revoked = byStatus('revoked')
+  const bound = stats.value?.bound || 0
+  const unbound = stats.value?.unbound || 0
   const activePct = total.value ? Math.round((active / total.value) * 100) : 0
   return [
     {
@@ -185,19 +186,17 @@ const statCards = computed(() => {
       icon: CheckCircle2,
       iconBg: 'bg-ok/12',
       iconColor: 'text-ok',
-      sub: t('dashboard.canActivate'),
+      sub: t('dashboard.unboundCount', { count: unbound }),
       subClass: 'text-muted',
     },
     {
-      label: t('dashboard.expired'),
-      value: expired,
-      icon: Clock3,
-      iconBg: 'bg-warn/12',
-      iconColor: 'text-warn',
-      sub: expiring.value.length
-        ? t('dashboard.nearExpiry', { count: expiring.value.length })
-        : t('dashboard.noNearExpiry'),
-      subClass: expiring.value.length ? 'text-warn' : 'text-muted',
+      label: t('dashboard.bound'),
+      value: bound,
+      icon: Link2,
+      iconBg: 'bg-info/12',
+      iconColor: 'text-info',
+      sub: t('dashboard.boundSub'),
+      subClass: 'text-muted',
     },
     {
       label: t('dashboard.revoked'),

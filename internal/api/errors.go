@@ -71,6 +71,8 @@ func handleError(c *gin.Context, err error) {
 		abort(c, http.StatusBadRequest, "LICENSE_EXPIRED", "license has expired")
 	case errors.Is(err, service.ErrDeviceLimit):
 		abort(c, http.StatusConflict, "DEVICE_LIMIT_REACHED", "device limit reached for this license")
+	case errors.Is(err, service.ErrDeviceBound):
+		abort(c, http.StatusConflict, "DEVICE_BOUND", "device is already bound to another license, unbind it first")
 	case errors.Is(err, service.ErrActivationMismatch):
 		abort(c, http.StatusNotFound, "ACTIVATION_NOT_FOUND", "activation not found or does not match device")
 	case errors.Is(err, service.ErrInvalidSignature):

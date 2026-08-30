@@ -275,7 +275,8 @@ func TestV3TokenDeactivate(t *testing.T) {
 	if w.Code != 200 {
 		t.Fatalf("deactivate: %d %s", w.Code, w.Body.String())
 	}
-	// 解绑后 verify → invalid
+	// 解绑后 verify → unbound(License 保持 ACTIVE,客户端提示"请重新激活")
+	// 注:旧行为返回 invalid;生命周期重构后解绑 ≠ 吊销,返回 unbound 携带 license 信息。
 	w = doJSON(t, r, "POST", "/api/v3/verify", "", map[string]any{
 		"activation_token": token,
 		"device_id":        "v3-device-1",
@@ -286,8 +287,8 @@ func TestV3TokenDeactivate(t *testing.T) {
 		Status string `json:"status"`
 	}
 	_ = json.Unmarshal(w.Body.Bytes(), &v)
-	if v.Status != "invalid" {
-		t.Fatalf("verify after deactivate must be invalid: %s", w.Body.String())
+	if v.Status != "unbound" {
+		t.Fatalf("verify after deactivate must be unbound: %s", w.Body.String())
 	}
 }
 

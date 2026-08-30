@@ -646,9 +646,9 @@ func TestActivationLifecycle(t *testing.T) {
 	if w.Code != 200 {
 		t.Fatalf("deactivate: %d %s", w.Code, w.Body.String())
 	}
-	// 解绑后 verify → invalid
-	if status, _ := verifyToken(t, r, aTok, "dev-a", "nonce-lifecycle-5"); status != "invalid" {
-		t.Fatalf("verify after deactivate must be invalid, got %s", status)
+	// 解绑后 verify → unbound(License 保持 ACTIVE,客户端提示"请重新激活";解绑 ≠ 吊销)
+	if status, _ := verifyToken(t, r, aTok, "dev-a", "nonce-lifecycle-5"); status != "unbound" {
+		t.Fatalf("verify after deactivate must be unbound, got %s", status)
 	}
 	// 设备 A 用自己 token 解绑设备 B → 404(防跨设备解绑)
 	w = doJSON(t, r, "POST", "/api/v3/deactivate", "", map[string]any{
@@ -675,14 +675,14 @@ func TestActivationLifecycle(t *testing.T) {
 	if w.Code != 200 {
 		t.Fatalf("reset-devices: %d %s", w.Code, w.Body.String())
 	}
-	if status, _ := verifyToken(t, r, aTok2, "dev-a", "nonce-lifecycle-8"); status != "invalid" {
-		t.Fatalf("verify after reset must be invalid, got %s", status)
+	if status, _ := verifyToken(t, r, aTok2, "dev-a", "nonce-lifecycle-8"); status != "unbound" {
+		t.Fatalf("verify after reset must be unbound (license stays ACTIVE), got %s", status)
 	}
 
 	// 重新激活 dev-a(吊销前最后一条有效凭据)
 	_, aTok3 := activateWithToken(t, r, key, "dev-a")
 
-	// 吊销 → token 全部作废,verify invalid(凭据直接作废,更严格;客户端 revoked/invalid 均禁用 Pro)
+	// 吊销 → token 全部作废,verify revoked(客户端显示"已吊销",禁用 Pro)
 	// 同时管理端 license 状态 = revoked
 	w = doJSON(t, r, "POST", "/api/v1/admin/licenses/"+act.LicenseID+"/revoke", token, map[string]any{"reason": "refund"})
 	if w.Code != 200 {
@@ -693,8 +693,8 @@ func TestActivationLifecycle(t *testing.T) {
 		"timestamp": time.Now().Unix(), "nonce": "nonce-lifecycle-9",
 	})
 	_ = json.Unmarshal(w.Body.Bytes(), &v)
-	if v.Status != "invalid" {
-		t.Fatalf("verify after revoke must be invalid (token revoked), got %s", w.Body.String())
+	if v.Status != "revoked" {
+		t.Fatalf("verify after revoke must be revoked, got %s", w.Body.String())
 	}
 	w = doJSON(t, r, "GET", "/api/v1/admin/licenses/"+act.LicenseID, token, nil)
 	var licAfter struct {

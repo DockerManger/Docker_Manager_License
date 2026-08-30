@@ -58,6 +58,22 @@ func (r *ActivationTokenRepo) Create(ctx context.Context, activationDBID int64, 
 // FindByTokenHash 按 token hash 查找未吊销、未过期的 token(join activation 与 license)。
 // 返回 token 记录 + 激活记录(含 license 展示 ID)。
 func (r *ActivationTokenRepo) FindByTokenHash(ctx context.Context, tokenHash string) (*model.ActivationToken, *model.Activation, error) {
+	return r.findByTokenHash(ctx, tokenHash, true)
+}
+
+// FindByTokenHashAny 按 token hash 查找 token(含已吊销/已过期,不参与激活判定)。
+// 用于 verify 时区分"解绑(activation.deactivated,License 仍 active)"与"吊销":
+// 解绑后 token 被吊销 → FindByTokenHash 找不到 → 用本方法定位原激活记录,
+// 由 service 层根据 activation.status / license.status 返回 unbound / revoked。
+func (r *ActivationTokenRepo) FindByTokenHashAny(ctx context.Context, tokenHash string) (*model.ActivationToken, *model.Activation, error) {
+	return r.findByTokenHash(ctx, tokenHash, false)
+}
+
+func (r *ActivationTokenRepo) findByTokenHash(ctx context.Context, tokenHash string, onlyLive bool) (*model.ActivationToken, *model.Activation, error) {
+	live := ` AND t.revoked_at IS NULL AND t.expires_at > now()`
+	if !onlyLive {
+		live = ``
+	}
 	var t model.ActivationToken
 	var act model.Activation
 	err := r.pool.QueryRow(ctx, `
@@ -68,7 +84,7 @@ func (r *ActivationTokenRepo) FindByTokenHash(ctx context.Context, tokenHash str
 		FROM activation_tokens t
 		JOIN activations a ON a.id = t.activation_id
 		JOIN licenses l ON l.id = a.license_id
-		WHERE t.token_hash = $1 AND t.revoked_at IS NULL AND t.expires_at > now()`,
+		WHERE t.token_hash = $1`+live,
 		tokenHash,
 	).Scan(
 		&t.ID, &t.ActivationID, &t.TokenHash, &t.CreatedAt, &t.ExpiresAt, &t.LastUsedAt, &t.RevokedAt,

@@ -173,9 +173,9 @@ func TestSSEUnbindPush(t *testing.T) {
 		t.Fatalf("state_version must be >= 2 after unbind, got %d", ev.StateVersion)
 	}
 
-	// 解绑后 verify → invalid
-	if status, _ := verifyToken(t, r, actToken, "sse-dev-1", "nonce-sse-1"); status != "invalid" {
-		t.Fatalf("verify after unbind must be invalid, got %s", status)
+	// 解绑后 verify → unbound(License 保持 ACTIVE,可重新激活;解绑 ≠ 吊销)
+	if status, _ := verifyToken(t, r, actToken, "sse-dev-1", "nonce-sse-1"); status != "unbound" {
+		t.Fatalf("verify after unbind must be unbound, got %s", status)
 	}
 }
 

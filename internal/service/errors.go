@@ -17,6 +17,8 @@ var (
 	ErrLicenseNotFound = errors.New("license not found")
 	// ErrDeviceLimit 活跃设备数已达上限。
 	ErrDeviceLimit = errors.New("device limit reached")
+	// ErrDeviceBound 该设备已绑定其他 License(一个 Docker_Manager_Go 只能绑定一个 License)。
+	ErrDeviceBound = errors.New("device already bound to another license")
 	// ErrActivationMismatch 激活凭据与 License/设备不匹配(防跨设备解绑)。
 	ErrActivationMismatch = errors.New("activation not found or does not match device")
 	// ErrActivationMissing 未提供 device_id。

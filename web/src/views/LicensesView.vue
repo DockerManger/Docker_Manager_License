@@ -8,6 +8,20 @@
       </template>
     </PageHeader>
 
+    <!-- 统计卡片(Total / Active / Bound / Revoked) -->
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <Card v-for="s in statCards" :key="s.label" class="p-4">
+        <div class="flex items-center justify-between">
+          <span class="text-[11.5px] text-muted">{{ s.label }}</span>
+          <span class="w-7 h-7 rounded-lg flex items-center justify-center" :class="s.iconBg">
+            <component :is="s.icon" class="size-3.5" :class="s.iconColor" />
+          </span>
+        </div>
+        <div class="text-[22px] font-bold tracking-tight mt-1.5">{{ s.value }}</div>
+        <div class="text-[11px] mt-0.5" :class="s.subClass">{{ s.sub }}</div>
+      </Card>
+    </div>
+
     <!-- 筛选栏 -->
     <div class="flex items-center gap-3 flex-wrap">
       <div class="flex items-center gap-1 rounded-[0.5rem] border border-line bg-surface p-1">
@@ -53,8 +67,8 @@
               <TableHead>{{ $t('licenses.customer') }}</TableHead>
               <TableHead>{{ $t('licenses.plan') }}</TableHead>
               <TableHead>{{ $t('licenses.status') }}</TableHead>
+              <TableHead>{{ $t('licenses.binding') }}</TableHead>
               <TableHead>{{ $t('licenses.devices') }}</TableHead>
-              <TableHead>{{ $t('licenses.issued') }}</TableHead>
               <TableHead>{{ $t('licenses.expires') }}</TableHead>
               <TableHead class="w-12 text-right">{{ $t('common.actions') }}</TableHead>
             </TableRow>
@@ -69,13 +83,22 @@
                 <Badge variant="outline">{{ l.plan }}</Badge>
               </TableCell>
               <TableCell><StatusBadge :status="l.status" /></TableCell>
+              <!-- Binding:🟢 Bound / ⚪ Unbound(与 License 状态分离) -->
+              <TableCell>
+                <span
+                  class="inline-flex items-center gap-1.5 text-[12.5px]"
+                  :class="isBound(l) ? 'text-ok' : 'text-muted'"
+                >
+                  <span class="w-2 h-2 rounded-full shrink-0" :class="isBound(l) ? 'bg-ok' : 'bg-muted/50'" />
+                  {{ isBound(l) ? $t('licenses.bound') : $t('licenses.unbound') }}
+                </span>
+              </TableCell>
               <TableCell>
                 <span class="inline-flex items-center gap-1.5 text-[12.5px]" :class="isFull(l) ? 'text-warn' : 'text-text'">
                   <MonitorSmartphone class="size-3.5 text-muted" />
                   {{ l.active_devices ?? 0 }} / {{ l.max_devices }}
                 </span>
               </TableCell>
-              <TableCell class="text-muted text-[12px]">{{ fmtDate(l.issued_at) }}</TableCell>
               <TableCell class="text-muted text-[12px]" :class="{ '!text-danger font-medium': isExpired(l) }">
                 {{ fmtDate(l.expires_at) }}
               </TableCell>
@@ -86,16 +109,25 @@
                       <MoreHorizontal class="size-4" />
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" class="w-44">
+                  <DropdownMenuContent align="end" class="w-48">
                     <DropdownMenuItem @select="$router.push(`/licenses/${l.license_id}`)">
                       <Eye class="size-3.5" /> {{ $t('common.view') }}
                     </DropdownMenuItem>
                     <DropdownMenuItem @select="exportKey(l)">
                       <Download class="size-3.5" /> {{ $t('detail.exportLic') }}
                     </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem v-if="l.status === 'active'" variant="destructive" @select="openRevoke(l)">
+                    <DropdownMenuSeparator v-if="l.status !== 'revoked'" />
+                    <!-- ACTIVE / EXPIRED:吊销(destructive)-->
+                    <DropdownMenuItem
+                      v-if="l.status === 'active' || l.status === 'expired'"
+                      variant="destructive"
+                      @select="openRevoke(l)"
+                    >
                       <Ban class="size-3.5" /> {{ $t('detail.revoke') }}
+                    </DropdownMenuItem>
+                    <!-- REVOKED:删除(destructive,仅已吊销)-->
+                    <DropdownMenuItem v-if="l.status === 'revoked'" variant="destructive" @select="openDelete(l)">
+                      <Trash2 class="size-3.5" /> {{ $t('delete.title') }}
                     </DropdownMenuItem>
                   </DropdownMenuContent>
                 </DropdownMenu>
@@ -277,6 +309,34 @@
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
+
+    <!-- 永久删除确认(仅 REVOKED 显示) -->
+    <AlertDialog :open="!!deleteTarget" @update:open="(v) => !v && (deleteTarget = null)">
+      <AlertDialogContent class="sm:max-w-md">
+        <div class="px-5 py-4">
+          <div class="flex items-center gap-3 mb-3">
+            <span class="w-9 h-9 rounded-xl bg-danger/15 text-danger flex items-center justify-center shrink-0">
+              <Trash2 class="size-4" />
+            </span>
+            <AlertDialogTitle class="text-[14.5px] font-semibold">{{ $t('delete.title') }}</AlertDialogTitle>
+          </div>
+          <AlertDialogDescription class="text-[12.5px] text-muted leading-relaxed">
+            {{ $t('delete.desc', { id: deleteTarget?.license_id }) }}
+            <br />
+            {{ $t('delete.desc2') }}
+            <br />
+            {{ $t('delete.desc3') }}
+          </AlertDialogDescription>
+        </div>
+        <AlertDialogFooter>
+          <AlertDialogCancel>{{ $t('common.cancel') }}</AlertDialogCancel>
+          <AlertDialogAction variant="destructive" :disabled="deleteBusy" @click="confirmDelete">
+            <Loader2 v-if="deleteBusy" class="size-3.5 animate-spin" />
+            {{ $t('delete.confirm') }}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   </div>
 </template>
 
@@ -284,8 +344,8 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import {
-  AlertCircle, Ban, CheckCircle2, Copy, Download, Eye, KeyRound, Loader2,
-  MonitorSmartphone, MoreHorizontal, Plus, RefreshCw, Search,
+  AlertCircle, Ban, CheckCircle2, Copy, Download, Eye, KeyRound, Link2, Loader2,
+  MonitorSmartphone, MoreHorizontal, Plus, RefreshCw, Search, ShieldX, Trash2, Unlink,
 } from '@lucide/vue'
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogTitle } from '@/components/ui/alert-dialog'
 import { Badge } from '@/components/ui/badge'
@@ -316,6 +376,43 @@ const status = ref('')
 const keyword = ref('')
 const loading = ref(true)
 const error = ref('')
+const stats = ref<any>(null)
+
+// ---------- 统计卡片(Total / Active / Bound / Revoked) ----------
+const statCards = computed(() => {
+  const by = stats.value?.by_status || {}
+  const totalN = stats.value?.total || 0
+  const active = by.active || 0
+  const bound = stats.value?.bound || 0
+  const revoked = by.revoked || 0
+  return [
+    {
+      label: t('dashboard.totalLicenses'), value: totalN,
+      icon: KeyRound, iconBg: 'bg-brand/12', iconColor: 'text-brand',
+      sub: t('dashboard.activePct', { pct: totalN ? Math.round((active / totalN) * 100) : 0 }), subClass: 'text-muted',
+    },
+    {
+      label: t('dashboard.active'), value: active,
+      icon: CheckCircle2, iconBg: 'bg-ok/12', iconColor: 'text-ok',
+      sub: t('licenses.unboundCount', { count: stats.value?.unbound ?? 0 }), subClass: 'text-muted',
+    },
+    {
+      label: t('dashboard.bound'), value: bound,
+      icon: Link2, iconBg: 'bg-info/12', iconColor: 'text-info',
+      sub: t('dashboard.boundSub'), subClass: 'text-muted',
+    },
+    {
+      label: t('dashboard.revoked'), value: revoked,
+      icon: ShieldX, iconBg: 'bg-danger/12', iconColor: 'text-danger',
+      sub: t('dashboard.instantlyBlocked'), subClass: 'text-muted',
+    },
+  ]
+})
+
+// isBound:active_devices > 0 = 有活跃绑定(Binding 与 License 状态分离)
+function isBound(l: License) {
+  return (l.active_devices ?? 0) > 0
+}
 
 const statusFilters = [
   { value: '', labelKey: 'licenses.all' },
@@ -345,11 +442,15 @@ async function load(p: number, s: string) {
   loading.value = true
   error.value = ''
   try {
-    const res = await api.get<{ items: License[]; total: number }>(
-      `/api/v1/admin/licenses?page=${p}&page_size=${pageSize}${s ? `&status=${s}` : ''}`,
-    )
+    const [res, st] = await Promise.all([
+      api.get<{ items: License[]; total: number }>(
+        `/api/v1/admin/licenses?page=${p}&page_size=${pageSize}${s ? `&status=${s}` : ''}`,
+      ),
+      api.get<any>('/api/v1/admin/stats'),
+    ])
     items.value = res.items || []
     total.value = res.total
+    stats.value = st
   } catch (e: any) {
     error.value = e?.message || '加载失败'
   } finally {
@@ -472,6 +573,33 @@ async function confirmRevoke() {
     toastErr(e?.message || t('revoke.failed'))
   } finally {
     revokeBusy.value = false
+  }
+}
+
+// ---------- 永久删除(仅 REVOKED;后端强制校验) ----------
+const deleteTarget = ref<License | null>(null)
+const deleteBusy = ref(false)
+let pendingDelete: License | null = null
+
+function openDelete(l: License) {
+  pendingDelete = l
+  deleteTarget.value = l
+}
+
+async function confirmDelete() {
+  const target = pendingDelete
+  if (!target) return
+  deleteBusy.value = true
+  try {
+    await api.del(`/api/v1/admin/licenses/${target.license_id}`)
+    toastOk(t('delete.successToast'))
+    pendingDelete = null
+    deleteTarget.value = null
+    load(page.value, status.value)
+  } catch (e: any) {
+    toastErr(e?.message || t('delete.failed'))
+  } finally {
+    deleteBusy.value = false
   }
 }
 

@@ -203,6 +203,21 @@ func (r *LicenseRepo) UpdateExpiry(ctx context.Context, id string, expiresAt int
 	return err
 }
 
+// Delete 永久删除 License 主记录。
+// 级联删除:license_revisions / activations / activation_tokens(外键 ON DELETE CASCADE)。
+// license_events 与 audit_logs 无外键,按展示 ID 记录保留(审计/事件历史不随删除丢失)。
+// ⚠️ 调用方必须已校验 License.status == revoked(只有已吊销的许可证才能删除)。
+func (r *LicenseRepo) Delete(ctx context.Context, id string) error {
+	tag, err := r.pool.Exec(ctx, `DELETE FROM licenses WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // SaveRevision 保存修订。
 func (r *LicenseRepo) SaveRevision(ctx context.Context, rev *model.LicenseRevision) error {
 	return r.pool.QueryRow(ctx, `
@@ -234,6 +249,8 @@ func (r *LicenseRepo) Revisions(ctx context.Context, licenseDBID string) ([]*mod
 }
 
 // Stats 概览统计。
+// 返回:total(总数)、by_status(按状态分布)、bound(当前有活跃激活的 active License 数)、
+// unbound(无活跃激活的 active License 数)。
 func (r *LicenseRepo) Stats(ctx context.Context) (map[string]any, error) {
 	type row struct {
 		Status string `json:"status"`
@@ -244,7 +261,7 @@ func (r *LicenseRepo) Stats(ctx context.Context) (map[string]any, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	out := map[string]any{"total": 0, "by_status": map[string]int{}}
+	out := map[string]any{"total": 0, "by_status": map[string]int{}, "bound": 0, "unbound": 0}
 	byStatus := out["by_status"].(map[string]int)
 	total := 0
 	for rows.Next() {
@@ -257,6 +274,16 @@ func (r *LicenseRepo) Stats(ctx context.Context) (map[string]any, error) {
 		total += n
 	}
 	out["total"] = total
+	// bound = 有活跃激活的 active License 数;unbound = active 但无活跃激活。
+	var bound int
+	if err := r.pool.QueryRow(ctx, `
+		SELECT COUNT(DISTINCT l.id) FROM licenses l
+		JOIN activations a ON a.license_id = l.id AND a.status = 'active'
+		WHERE l.status = 'active'`).Scan(&bound); err != nil {
+		return nil, err
+	}
+	out["bound"] = bound
+	out["unbound"] = max(0, byStatus[model.StatusActive]-bound)
 	return out, rows.Err()
 }
 

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/DockerManger/Docker_Manager_License/internal/model"
@@ -168,12 +169,31 @@ func (r *ActivationRepo) ActivateDevice(ctx context.Context, licenseDBID string,
 		if activeCount >= maxDevices {
 			return nil, nil, ErrDeviceLimit
 		}
+		// 业务规则:一个 Docker_Manager_Go(device_id)只能绑定一个 License。
+		// 该设备已在本 License 之外有其他 active 激活 → 拒绝(必须先解绑旧的)。
+		// 数据库层另有 partial unique index(uq_activations_active_device)兜底并发。
+		var boundElsewhere bool
+		if err := tx.QueryRow(ctx,
+			`SELECT EXISTS(SELECT 1 FROM activations
+			 WHERE device_id = $1 AND status = 'active' AND license_id <> $2)`,
+			deviceID, licenseDBID,
+		).Scan(&boundElsewhere); err != nil {
+			return nil, nil, err
+		}
+		if boundElsewhere {
+			return nil, nil, ErrDeviceBound
+		}
 		if _, err := tx.Exec(ctx, `
 			INSERT INTO activations (license_id, activation_id, device_id, device_name, device_fingerprint,
 				platform, architecture, product_version, status, expires_at, ip)
 			VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'active',$9,$10)`,
 			licenseDBID, activationID, deviceID, deviceName, deviceFingerprint,
 			platform, architecture, productVersion, licenseExpiresAt, ip); err != nil {
+			// 并发兜底:同一设备同时激活不同 License → 唯一约束 23505 → 拒绝
+			var pgErr *pgconn.PgError
+			if errors.As(err, &pgErr) && pgErr.Code == "23505" {
+				return nil, nil, ErrDeviceBound
+			}
 			return nil, nil, err
 		}
 		existingID, err = activationIDOf(ctx, tx, licenseDBID, deviceID)
@@ -294,7 +314,10 @@ func (r *ActivationRepo) DeactivateByToken(ctx context.Context, licenseDBID, dev
 	if err != nil {
 		return nil, err
 	}
-	ev, err := r.events.InsertTx(ctx, tx, newEvent(EvtActivationUnbound, licenseDisplayID, activationDisplayID, devID, v, nil))
+	// payload:区分解绑来源(用户主动解绑 vs 管理员强制解绑)。
+	// 客户端收到后据此提示"许可证已由管理员解除绑定,请重新激活许可证"。
+	ev, err := r.events.InsertTx(ctx, tx, newEvent(EvtActivationUnbound, licenseDisplayID, activationDisplayID, devID, v,
+		map[string]any{"source": "user", "reason": "user_unbound"}))
 	if err != nil {
 		return nil, err
 	}
@@ -333,7 +356,9 @@ func (r *ActivationRepo) DeactivateByID(ctx context.Context, activationID int64,
 	if err != nil {
 		return nil, err
 	}
-	ev, err := r.events.InsertTx(ctx, tx, newEvent(EvtActivationUnbound, licenseDisplayID, activationDisplayID, deviceID, v, nil))
+	// payload:管理员强制解绑(source=admin),License 保持 ACTIVE,可重新激活。
+	ev, err := r.events.InsertTx(ctx, tx, newEvent(EvtActivationUnbound, licenseDisplayID, activationDisplayID, deviceID, v,
+		map[string]any{"source": "admin", "reason": "admin_unbound"}))
 	if err != nil {
 		return nil, err
 	}
@@ -401,7 +426,9 @@ func (r *ActivationRepo) ResetDevices(ctx context.Context, licenseDBID string, n
 		if err != nil {
 			return 0, nil, err
 		}
-		ev, err := r.events.InsertTx(ctx, tx, newEvent(EvtActivationUnbound, x.licID, x.actDisp, x.devID, v, nil))
+		// payload:管理员强制解绑(source=admin),License 保持 ACTIVE,可重新激活。
+		ev, err := r.events.InsertTx(ctx, tx, newEvent(EvtActivationUnbound, x.licID, x.actDisp, x.devID, v,
+			map[string]any{"source": "admin", "reason": "admin_unbound"}))
 		if err != nil {
 			return 0, nil, err
 		}

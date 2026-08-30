@@ -350,6 +350,49 @@ func (s *LicenseService) Revisions(ctx context.Context, licenseID string) ([]*mo
 	return s.repo.Revisions(ctx, l.ID)
 }
 
+// Delete 永久删除许可证(生命周期:ACTIVE → 吊销 → REVOKED → 允许删除)。
+// 后端强制校验:只有 status == REVOKED 的许可证才允许删除。
+// ACTIVE / EXPIRED / UNBOUND 一律拒绝(409)——即使绕过前端隐藏按钮也无法误删。
+// 删除级联清理激活/凭据/修订;license_events 与审计日志保留(可追溯)。
+func (s *LicenseService) Delete(ctx context.Context, licenseID, by, ip string) error {
+	l, err := s.resolveLicense(ctx, licenseID)
+	if err != nil {
+		return err
+	}
+	if l.Status != model.StatusRevoked {
+		return fmt.Errorf("%w: only revoked licenses can be deleted (current status: %s)", ErrConflict, l.Status)
+	}
+	if err := s.repo.Delete(ctx, l.ID); err != nil {
+		return err
+	}
+	_ = s.auditLog(ctx, by, ip, "license.delete", "license", l.LicenseID,
+		map[string]any{"status_before": l.Status})
+	return nil
+}
+
+// Unbind 管理员强制解除绑定(License 粒度,解绑该 License 的全部活跃激活)。
+// 语义:只删除 Binding,License 保持 ACTIVE,可重新激活 —— 绝不吊销。
+// 幂等:无活跃激活时返回 0 且不报错(重复解绑不产生 500)。
+// 每个受影响的激活持久化 activation.unbound(source=admin,reason=admin_unbound)事件并 SSE 推送。
+// reason 为管理员填写的解除原因(可选,记录到审计)。
+func (s *LicenseService) Unbind(ctx context.Context, licenseID, reason, by, ip string) (int, error) {
+	l, err := s.resolveLicense(ctx, licenseID)
+	if err != nil {
+		return 0, err
+	}
+	n, events, err := s.activationRepo.ResetDevices(ctx, l.ID, time.Unix(Now(), 0))
+	if err != nil {
+		return 0, err
+	}
+	s.PublishEvents(events)
+	meta := map[string]any{"unbound": n, "source": "admin", "reason": "admin_unbound"}
+	if reason != "" {
+		meta["note"] = reason
+	}
+	_ = s.auditLog(ctx, by, ip, "license.admin_unbind", "license", l.LicenseID, meta)
+	return int(n), nil
+}
+
 // Stats 概览统计。
 func (s *LicenseService) Stats(ctx context.Context) (map[string]any, error) {
 	return s.repo.Stats(ctx)

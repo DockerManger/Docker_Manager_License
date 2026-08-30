@@ -73,6 +73,8 @@ func Router(d *Deps) *gin.Engine {
 		authed.GET("/licenses/:id/export-json", adminExportLicenseJSON(d))
 		authed.POST("/licenses/:id/extend", adminExtendLicense(d))
 		authed.POST("/licenses/:id/revoke", adminRevokeLicense(d))
+		authed.POST("/licenses/:id/unbind", adminUnbindLicense(d))
+		authed.DELETE("/licenses/:id", adminDeleteLicense(d))
 		authed.GET("/licenses/:id/activations", adminListActivations(d))
 		authed.GET("/licenses/:id/events", adminLicenseEvents(d))
 		authed.POST("/licenses/:id/activations/:aid/deactivate", adminDeactivateActivation(d))

@@ -4,45 +4,10 @@
     <img src="/bg.jpg" alt="" class="login-bg" @error="bgFailed = true" />
     <div v-if="!bgFailed" class="login-bg-overlay" />
 
-    <!-- 右上角工具栏:主题切换 + 语言切换(仿 3x-ui / Docker_Manager_Go 登录页) -->
+    <!-- 右上角工具栏:语言切换 + 主题切换(shadcn-vue 组件,与管理页一致) -->
     <div class="login-toolbar">
-      <button
-        type="button"
-        class="toolbar-btn"
-        :title="theme === 'dark' ? $t('theme.switchToLight') : $t('theme.switchToDark')"
-        :aria-label="theme === 'dark' ? $t('theme.switchToLight') : $t('theme.switchToDark')"
-        @click="toggleThemeWithTransition($event)"
-      >
-        <Sun v-if="theme === 'dark'" class="size-[18px]" />
-        <Moon v-else class="size-[18px]" />
-      </button>
-      <div class="lang-pop-wrap" ref="langWrapRef">
-        <button
-          type="button"
-          class="toolbar-btn"
-          :title="$t('lang.switch')"
-          :aria-label="$t('lang.switch')"
-          @click.stop="langOpen = !langOpen"
-        >
-          <Languages class="size-[18px]" />
-        </button>
-        <Transition name="dm-drop">
-          <div v-if="langOpen" class="lang-pop" @click.stop>
-            <button
-              v-for="l in LANGS"
-              :key="l.code"
-              type="button"
-              class="lang-item"
-              :class="{ active: locale === l.code }"
-              @click="onLang(l.code)"
-            >
-              <span aria-hidden="true">{{ l.flag }}</span>
-              <span>{{ l.label }}</span>
-              <Check v-if="locale === l.code" class="lang-check" />
-            </button>
-          </div>
-        </Transition>
-      </div>
+      <ToggleLocale />
+      <ThemeToggle />
     </div>
 
     <div class="login-wrapper">
@@ -111,43 +76,25 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { useI18n } from 'vue-i18n'
-import { AlertCircle, Check, Languages, Loader2, Moon, Sun } from '@lucide/vue'
+import { AlertCircle, Loader2 } from '@lucide/vue'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import AppLogo from '../components/AppLogo.vue'
+import ThemeToggle from '../components/ThemeToggle.vue'
+import ToggleLocale from '../components/ToggleLocale.vue'
 import { api, setToken } from '../api'
-import { LANGS, setLang } from '../i18n'
-import { theme, toggleThemeWithTransition } from '../lib/theme'
 
 const router = useRouter()
-const { locale } = useI18n()
 const username = ref('')
 const password = ref('')
 const totp = ref('')
 const err = ref('')
 const busy = ref(false)
-const langOpen = ref(false)
-const langWrapRef = ref<HTMLElement | null>(null)
 const bgFailed = ref(false)
-
-function onLang(code: string) {
-  setLang(code)
-  langOpen.value = false
-}
-
-function onDocClick(e: MouseEvent) {
-  if (langOpen.value && langWrapRef.value && !langWrapRef.value.contains(e.target as Node)) {
-    langOpen.value = false
-  }
-}
-onMounted(() => {
-  document.addEventListener('click', onDocClick)
-})
 
 async function submit() {
   err.value = ''
@@ -188,7 +135,7 @@ async function submit() {
   z-index: 1;
 }
 
-/* ---------- 右上角工具栏 ---------- */
+/* ---------- 右上角工具栏(shadcn 组件:语言 DropdownMenu + 主题按钮) ---------- */
 .login-toolbar {
   position: fixed;
   top: 16px;
@@ -196,96 +143,31 @@ async function submit() {
   z-index: 10;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
 }
-.toolbar-btn {
-  width: 40px;
-  height: 40px;
-  min-width: 40px;
-  border-radius: 50%;
+
+/* 登录页工具栏按钮:放大(44px 圆 + 20px 图标)+ 背景醒目(背景图上清晰可见) */
+.login-toolbar :deep(button) {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
   padding: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid rgba(255, 255, 255, 0.35);
-  background: rgba(255, 255, 255, 0.55);
-  color: rgba(0, 0, 0, 0.75);
-  cursor: pointer;
+  border-radius: 50%;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
   transition: all 0.2s;
 }
-html[data-theme='dark'] .toolbar-btn {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: rgba(255, 255, 255, 0.14);
-  color: rgba(255, 255, 255, 0.87);
-}
-.toolbar-btn:hover {
+.login-toolbar :deep(button:hover) {
+  background: rgba(255, 255, 255, 0.3);
+  border-color: var(--color-brand);
+  color: var(--color-brand);
   transform: translateY(-1px);
-  border-color: #ec4899;
-  color: #ec4899;
 }
-
-/* 语言下拉 */
-.lang-pop-wrap {
-  position: relative;
-}
-.lang-pop {
-  position: absolute;
-  top: 48px;
-  right: 0;
-  z-index: 30;
-  min-width: 180px;
-  max-height: 60vh;
-  overflow-y: auto;
-  padding: 4px;
-  border-radius: 12px;
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  background: #ffffff;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.16);
-}
-html[data-theme='dark'] .lang-pop {
-  background: #1c1a22;
-  border-color: rgba(255, 255, 255, 0.12);
-}
-.lang-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 8px 12px;
-  border: none;
-  border-radius: 8px;
-  background: transparent;
-  color: rgba(0, 0, 0, 0.88);
-  font-size: 13px;
-  cursor: pointer;
-  text-align: left;
-  transition: background 0.15s;
-}
-html[data-theme='dark'] .lang-item {
-  color: rgba(255, 255, 255, 0.87);
-}
-.lang-item:hover {
-  background: rgba(236, 72, 153, 0.08);
-}
-.lang-item.active {
-  background: rgba(236, 72, 153, 0.12);
-  color: #ec4899;
-  font-weight: 600;
-}
-.lang-check {
-  margin-left: auto;
-  font-size: 12px;
-}
-
-/* 语言菜单动画 */
-.dm-drop-enter-active,
-.dm-drop-leave-active {
-  transition: opacity 0.15s ease, transform 0.15s ease;
-}
-.dm-drop-enter-from,
-.dm-drop-leave-to {
-  opacity: 0;
-  transform: translateY(-6px) scale(0.98);
+.login-toolbar :deep(svg) {
+  width: 20px;
+  height: 20px;
 }
 
 /* ---------- 居中卡片(毛玻璃) ---------- */

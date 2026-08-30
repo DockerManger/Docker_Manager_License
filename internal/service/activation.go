@@ -196,6 +196,30 @@ func (s *LicenseService) Verify(ctx context.Context, req VerifyRequest) (map[str
 	tok, act, err := s.tokens.FindByTokenHash(ctx, hash)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
+			// token 已吊销(解绑/重新激活)或过期:定位原激活记录,区分"解绑"与"吊销"。
+			// 关键语义:解绑 ≠ 吊销 —— License 保持 ACTIVE,客户端应显示"未激活/请重新激活"。
+			_, actAny, errAny := s.tokens.FindByTokenHashAny(ctx, hash)
+			if errAny == nil && actAny != nil {
+				if l, lerr := s.repo.GetByLicenseID(ctx, actAny.LicenseID); lerr == nil {
+					if l.Status == model.StatusRevoked || l.Status == model.StatusSuspended || actAny.Status == model.ActivationRevoked {
+						// 吊销:License 或激活已 REVOKED → 客户端显示"已吊销"
+						s.securityLog(ctx, SecInvalidToken, l.LicenseID, actAny.ActivationID, actAny.DeviceID, req.IP, "revoked token used")
+						return s.verifyResultWith(l, actAny.StateVersion, "revoked"), nil
+					}
+					if l.ExpiresAt < Now() {
+						return s.verifyResultWith(l, actAny.StateVersion, "expired"), nil
+					}
+					if actAny.Status == model.ActivationDeactivated {
+						// 解绑(用户/管理员):License 仍 ACTIVE,只是 Binding 解除 → unbound
+						// 客户端收到后清除本地凭据、保留 Key,提示"请重新激活许可证"。
+						out := s.verifyResultWith(l, actAny.StateVersion, "unbound")
+						out["unbind_reason"] = "unbound"
+						return out, nil
+					}
+					// 激活仍 active 但 token 被吊销(重新激活后的旧 token)→ 凭据本身无效
+					return s.verifyResult("invalid", nil), nil
+				}
+			}
 			s.securityLog(ctx, SecInvalidToken, "", "", req.DeviceID, req.IP, "")
 			return s.verifyResult("invalid", nil), nil
 		}

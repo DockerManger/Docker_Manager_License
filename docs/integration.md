@@ -300,6 +300,14 @@ POST /api/v3/deactivate
 - 凭据(token)必须匹配该 License + 设备,防止 Device A 解绑 Device B(不匹配 → `ACTIVATION_NOT_FOUND`)
 - 吊销/过期的 License 也允许解绑(客户端清理)
 - 服务端同时吊销该激活的全部 token(解绑后旧 token 立即失效),并推送 `activation.unbound` 事件
+  (payload `{"source": "user" | "admin", "reason": "user_unbound" | "admin_unbound"}`,
+  客户端据此区分"用户主动解绑"与"管理员强制解绑"的提示文案)
+- **解绑 ≠ 吊销**:解绑只把激活置为 `deactivated`,License 保持 `ACTIVE`,可随时重新激活
+- **解绑后 verify 返回 `unbound`**:旧 token 调用 verify 时,服务端定位原激活记录,
+  若 License 仍 ACTIVE 且激活为 deactivated → 返回 `status=unbound`(携带 license_id/expires_at/features),
+  客户端清除本地凭据、保留 Key,提示"请重新激活许可证";绝不显示"已吊销"
+- **吊销后 verify 返回 `revoked`**:License 或激活已 REVOKED → `status=revoked`,
+  客户端显示"许可证已被吊销"(唯一允许显示"已吊销"的场景)
 
 ### 8.4 SSE 事件流(主动同步核心)
 

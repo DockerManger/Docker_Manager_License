@@ -182,6 +182,41 @@ func adminRevokeLicense(d *Deps) gin.HandlerFunc {
 	}
 }
 
+// adminUnbindLicense POST /api/v1/admin/licenses/:id/unbind
+// 管理员强制解除绑定:License 保持 ACTIVE,Binding 置为 UNBOUND(可重新激活)。
+// 与吊销完全分离 —— 绝不修改 License.status。幂等(无活跃激活时返回 unbound=0)。
+type unbindLicenseRequest struct {
+	Reason string `json:"reason"`
+}
+
+func adminUnbindLicense(d *Deps) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var req unbindLicenseRequest
+		_ = c.ShouldBindJSON(&req)
+		n, err := d.LicenseSvc.Unbind(c.Request.Context(), c.Param("id"),
+			strings.TrimSpace(req.Reason), c.GetString(ctxAdminKey), clientIP(c))
+		if err != nil {
+			handleError(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"ok": true, "unbound": n, "license_status": "active"})
+	}
+}
+
+// adminDeleteLicense DELETE /api/v1/admin/licenses/:id
+// 永久删除:后端强制校验 status == REVOKED,否则 409 拒绝。
+// ACTIVE(含 UNBOUND)/EXPIRED 一律不允许删除 —— 防止绕过前端误删。
+func adminDeleteLicense(d *Deps) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if err := d.LicenseSvc.Delete(c.Request.Context(), c.Param("id"),
+			c.GetString(ctxAdminKey), clientIP(c)); err != nil {
+			handleError(c, err)
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"ok": true})
+	}
+}
+
 // adminLicenseStats GET /api/v1/admin/stats
 func adminLicenseStats(d *Deps) gin.HandlerFunc {
 	return func(c *gin.Context) {

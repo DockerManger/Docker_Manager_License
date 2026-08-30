@@ -175,7 +175,7 @@
             </div>
             <div>
               <Label>{{ $t('issue.maxDevices') }}</Label>
-              <Input v-model.number="form.maxDevices" type="number" min="1" value="1" />
+              <Input v-model.number="form.maxDevices" type="number" min="1" />
             </div>
           </div>
 

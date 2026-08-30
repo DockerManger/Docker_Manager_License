@@ -548,12 +548,12 @@ func TestActivationLifecycle(t *testing.T) {
 		t.Fatalf("activate dev-a: %d %s", w.Code, w.Body.String())
 	}
 	var act struct {
-		Status         string `json:"status"`
-		ActivationID   string `json:"activation_id"`
-		ActivationTok  string `json:"activation_token"`
-		LicenseID      string `json:"license_id"`
-		ExpiresAt      int64  `json:"expires_at"`
-		StateVersion   int64  `json:"state_version"`
+		Status        string `json:"status"`
+		ActivationID  string `json:"activation_id"`
+		ActivationTok string `json:"activation_token"`
+		LicenseID     string `json:"license_id"`
+		ExpiresAt     int64  `json:"expires_at"`
+		StateVersion  int64  `json:"state_version"`
 	}
 	_ = json.Unmarshal(w.Body.Bytes(), &act)
 	if act.Status != "active" || act.ActivationID == "" || act.LicenseID == "" || act.ExpiresAt == 0 {

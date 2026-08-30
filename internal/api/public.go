@@ -82,15 +82,15 @@ func publicActivate(d *Deps) gin.HandlerFunc {
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{
-			"status":         "active",
-			"activation_id":  res.Activation.ActivationID,
+			"status":           "active",
+			"activation_id":    res.Activation.ActivationID,
 			"activation_token": res.Token,
-			"license_id":     res.LicenseID,
-			"expires_at":     res.ExpiresAt,
-			"features":       res.Features,
-			"max_devices":    res.MaxDevices,
-			"server_time":    service.Now(),
-			"state_version":  res.Activation.StateVersion,
+			"license_id":       res.LicenseID,
+			"expires_at":       res.ExpiresAt,
+			"features":         res.Features,
+			"max_devices":      res.MaxDevices,
+			"server_time":      service.Now(),
+			"state_version":    res.Activation.StateVersion,
 		})
 	}
 }

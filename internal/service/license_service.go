@@ -65,7 +65,7 @@ func (s *LicenseService) PublishEvents(events []*model.LicenseEvent) {
 	}
 }
 
-// PublishGlobal 持久化并广播一条全局事件(activation_id='',所有订阅者收到)。
+// PublishGlobal 持久化并广播一条全局事件(activation_id=”,所有订阅者收到)。
 // 用于 version_policy.changed 等不针对单个激活的事件。
 func (s *LicenseService) PublishGlobal(ctx context.Context, evType string, payload map[string]any) error {
 	ev := newEvent(evType, "", "", "", 0, payload)

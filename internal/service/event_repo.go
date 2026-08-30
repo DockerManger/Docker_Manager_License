@@ -15,17 +15,17 @@ import (
 // 约定:事件只是 Trigger(通知客户端"状态可能变化"),客户端收到后必须 V3 Verify
 // 获取 Server 权威状态 —— Event 本身不带授权结论。
 const (
-	EvtLicenseChanged        = "license.changed"         // 许可证状态/到期时间/plan/features 变化
-	EvtLicenseRevoked        = "license.revoked"         // 许可证被吊销(全局广播 + 逐激活)
-	EvtLicenseExpired        = "license.expired"         // 许可证过期(全局广播)
-	EvtLicenseDisabled       = "license.disabled"        // 许可证被挂起(全局广播)
-	EvtLicenseEnabled        = "license.enabled"         // 许可证恢复(全局广播)
-	EvtActivationCreated     = "activation.created"      // 新设备激活
-	EvtActivationRevoked     = "activation.revoked"      // 激活随许可证吊销被撤销
-	EvtActivationUnbound     = "activation.unbound"      // 设备解绑(管理员/客户端)
-	EvtActivationRebound     = "activation.rebound"      // 设备重新激活(含幂等刷新 token)
-	EvtFeatureChanged        = "feature.changed"         // 功能集合变化
-	EvtVersionPolicyChanged  = "version_policy.changed"  // 版本策略变化(minimum/blocked)
+	EvtLicenseChanged       = "license.changed"        // 许可证状态/到期时间/plan/features 变化
+	EvtLicenseRevoked       = "license.revoked"        // 许可证被吊销(全局广播 + 逐激活)
+	EvtLicenseExpired       = "license.expired"        // 许可证过期(全局广播)
+	EvtLicenseDisabled      = "license.disabled"       // 许可证被挂起(全局广播)
+	EvtLicenseEnabled       = "license.enabled"        // 许可证恢复(全局广播)
+	EvtActivationCreated    = "activation.created"     // 新设备激活
+	EvtActivationRevoked    = "activation.revoked"     // 激活随许可证吊销被撤销
+	EvtActivationUnbound    = "activation.unbound"     // 设备解绑(管理员/客户端)
+	EvtActivationRebound    = "activation.rebound"     // 设备重新激活(含幂等刷新 token)
+	EvtFeatureChanged       = "feature.changed"        // 功能集合变化
+	EvtVersionPolicyChanged = "version_policy.changed" // 版本策略变化(minimum/blocked)
 )
 
 // ---------- Event Store(持久化,PostgreSQL) ----------
@@ -63,7 +63,7 @@ func (r *EventRepo) InsertTx(ctx context.Context, tx pgx.Tx, ev *model.LicenseEv
 	return ev, nil
 }
 
-// ListAfter 返回某 Activation(或全局广播,activation_id='')在 afterSeq 之后的事件,
+// ListAfter 返回某 Activation(或全局广播,activation_id=”)在 afterSeq 之后的事件,
 // 按 sequence 升序(Replay 顺序)。limit 用于防止单次重放过长。
 func (r *EventRepo) ListAfter(ctx context.Context, activationID string, afterSeq int64, limit int) ([]*model.LicenseEvent, error) {
 	if limit <= 0 {

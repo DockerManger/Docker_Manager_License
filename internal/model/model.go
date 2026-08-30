@@ -89,7 +89,7 @@ type Activation struct {
 	Platform          string     `json:"platform,omitempty"`
 	Architecture      string     `json:"architecture,omitempty"`
 	ProductVersion    string     `json:"product_version,omitempty"`
-	Status            string     `json:"status"` // active / deactivated / revoked / expired
+	Status            string     `json:"status"`        // active / deactivated / revoked / expired
 	StateVersion      int64      `json:"state_version"` // 状态版本:每次变更 +1(事件乱序保护)
 	ActivatedAt       time.Time  `json:"activated_at"`
 	LastSeenAt        time.Time  `json:"last_seen_at"`
@@ -159,14 +159,14 @@ type ServerSetting struct {
 // LicenseEvent 持久化 License 事件(Event Store,SSE 主动同步)。
 // 禁止保存敏感数据:不存 License Key / 私钥 / activation_token 明文。
 type LicenseEvent struct {
-	SequenceID   int64           `json:"sequence_id"`            // 数据库 id(BIGSERIAL),单调递增
-	EventID      string          `json:"event_id"`               // 'evt_' || sequence_id,Last-Event-ID 用
-	EventType    string          `json:"event_type"`             // license.changed / activation.revoked / ...
-	LicenseID    string          `json:"license_id,omitempty"`   // 展示 ID(DMG-*)
+	SequenceID   int64           `json:"sequence_id"`             // 数据库 id(BIGSERIAL),单调递增
+	EventID      string          `json:"event_id"`                // 'evt_' || sequence_id,Last-Event-ID 用
+	EventType    string          `json:"event_type"`              // license.changed / activation.revoked / ...
+	LicenseID    string          `json:"license_id,omitempty"`    // 展示 ID(DMG-*)
 	ActivationID string          `json:"activation_id,omitempty"` // 展示 ID(ACT-*);'' = 全局广播
 	DeviceID     string          `json:"device_id,omitempty"`
-	StateVersion int64           `json:"state_version"`          // 变更后的 activation.state_version
-	Payload      json.RawMessage `json:"payload,omitempty"`      // 事件载荷(状态/过期时间/plan/features 等)
+	StateVersion int64           `json:"state_version"`     // 变更后的 activation.state_version
+	Payload      json.RawMessage `json:"payload,omitempty"` // 事件载荷(状态/过期时间/plan/features 等)
 	CreatedAt    time.Time       `json:"created_at"`
 }
 

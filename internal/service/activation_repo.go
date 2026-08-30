@@ -355,10 +355,10 @@ func (r *ActivationRepo) ResetDevices(ctx context.Context, licenseDBID string, n
 
 	// 先取受影响激活(license 展示 ID / activation 展示 ID / device_id / 状态版本)
 	type actRow struct {
-		actID    int64
-		licID    string
-		actDisp  string
-		devID    string
+		actID   int64
+		licID   string
+		actDisp string
+		devID   string
 	}
 	rows, err := tx.Query(ctx, `
 		SELECT a.id, l.license_id, a.activation_id, a.device_id

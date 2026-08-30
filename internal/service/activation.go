@@ -151,12 +151,12 @@ func (s *LicenseService) Deactivate(ctx context.Context, req DeactivateRequest) 
 
 // DeactivateRequest 解绑请求(V3:token 唯一凭据)。
 type DeactivateRequest struct {
-	Token        string
-	DeviceID     string
-	Timestamp    int64
-	Nonce        string
-	IP           string
-	UserAgent    string
+	Token     string
+	DeviceID  string
+	Timestamp int64
+	Nonce     string
+	IP        string
+	UserAgent string
 }
 
 // VerifyRequest 在线验证请求(V3:activation_token 唯一凭据)。

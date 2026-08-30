@@ -7,7 +7,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"strings"
 	"time"
 
 	"github.com/DockerManger/Docker_Manager_License/internal/crypto"
@@ -15,29 +14,32 @@ import (
 	"github.com/DockerManger/Docker_Manager_License/internal/model"
 )
 
-// NextVerifyAfter 客户端建议的下次验证间隔(秒)。配合客户端本地 Grace Period 使用。
-const NextVerifyAfter = 86400 // 24h
-
 // 激活 token 字节数(hex 编码 → 64 位字符)。
 const activationTokenBytes = 32
 
 // tokenTTL 激活凭据有效期(随 License 续期重签;License 过期由 license 层判定)。
 const tokenTTL = 365 * 24 * time.Hour
 
-// ReplayWindow 请求时间戳允许偏差(±5 分钟,Skill §16)。
+// ReplayWindow 请求时间戳允许偏差(±5 分钟)。
 const ReplayWindow = 5 * time.Minute
 
 // NonceMaxAge nonce 保留时间(超过即视为可复用;窗口内已占用即重放)。
 const NonceMaxAge = time.Hour
 
-// ---------- 在线激活闭环(V3) ----------
+// ---------- 在线激活闭环(V3,Event-Driven) ----------
 //
 // 安全模型(与 Docker_Manager_Go 客户端集成文档一致):
 //   - 本地 Ed25519 验签证明"License 是官方签发且未被篡改"
-//   - License Key 只用于首次激活/重新激活(Skill §13)
-//   - 正常运行使用 Activation Token:数据库只存 SHA-256 hash(Skill §11)
-//   - verify/deactivate 携带 timestamp + nonce 防重放(Skill §16)
-//   - 所有响应带 server_time,客户端据此计算 clock_offset(Skill §14)
+//   - License Key 只用于首次激活/重新激活
+//   - 正常运行使用 Activation Token:数据库只存 SHA-256 hash,明文仅激活响应返回一次
+//   - verify/deactivate 携带 timestamp + nonce 防重放
+//   - 所有响应带 server_time,客户端据此计算 clock_offset(防本地时间作弊)
+//
+// 同步模型(V3):
+//   - License 状态变化由 Server 主动通过 Event + SSE 通知客户端(Event-Driven),
+//     客户端收到事件后调用 Verify 获取权威状态 —— Event 只是 Trigger,Verify 才是 Authority
+//   - 状态变更与事件在同一事务内持久化,提交后 Publish 到 SSE
+//   - 禁止任何周期性 Verify / Heartbeat / Check-in / Lease 机制
 
 // ActivateRequest 激活请求(API 层解析后传入)。
 type ActivateRequest struct {
@@ -62,7 +64,8 @@ type ActivateResult struct {
 }
 
 // Activate 在线激活(V3):
-// 验签 → 查 License → 事务内设备绑定(行锁保证并发不破上限)→ 签发 token(hash 存储)→ 审计。
+// 验签 → 查 License → 事务内设备绑定(行锁保证并发不破上限)→ 签发 token(hash 存储)
+// → 同事务持久化事件(activation.created / activation.rebound)→ 提交后 Publish → 审计。
 // 返回明文 token 供客户端保存,数据库只存 SHA-256。
 func (s *LicenseService) Activate(ctx context.Context, req ActivateRequest) (*ActivateResult, error) {
 	if req.DeviceID == "" {
@@ -88,7 +91,7 @@ func (s *LicenseService) Activate(ctx context.Context, req ActivateRequest) (*Ac
 	}
 	tokenHash := sha256Hex(token)
 	now := time.Unix(Now(), 0)
-	act, err := s.activationRepo.ActivateDevice(ctx, l.ID, l.MaxDevices,
+	act, events, err := s.activationRepo.ActivateDevice(ctx, l.ID, l.MaxDevices,
 		req.DeviceID, req.DeviceName, req.ProductVersion, req.DeviceFingerprint,
 		req.Platform, req.Architecture, req.IP, activationID, tokenHash, time.Unix(l.ExpiresAt, 0), now)
 	if err != nil {
@@ -97,6 +100,8 @@ func (s *LicenseService) Activate(ctx context.Context, req ActivateRequest) (*Ac
 		}
 		return nil, err
 	}
+	// 事务已提交:扇出事件到 SSE
+	s.PublishEvents(events)
 	_ = s.auditLog(ctx, "", req.IP, "license.activate", "license", l.LicenseID,
 		map[string]any{"activation_id": act.ActivationID, "device_id": req.DeviceID, "product_version": req.ProductVersion})
 	return &ActivateResult{
@@ -109,79 +114,44 @@ func (s *LicenseService) Activate(ctx context.Context, req ActivateRequest) (*Ac
 	}, nil
 }
 
-// Deactivate 客户端解绑:
-//   - 新路径:activation_token + device_id(凭据必须匹配,防 Device A 解绑 Device B)
-//   - 旧路径(升级窗口期兼容):key + activation_id(=旧 code,已迁移为 token hash)+ device_id
-//
+// Deactivate 客户端解绑(V3,唯一路径):
+// activation_token + device_id(凭据必须匹配,防 Device A 解绑 Device B)。
 // 吊销/过期的 License 也允许解绑(客户端清理)。
 func (s *LicenseService) Deactivate(ctx context.Context, req DeactivateRequest) error {
 	now := time.Unix(Now(), 0)
-	// 新路径:token 凭据
-	if req.Token != "" {
-		hash := sha256Hex(req.Token)
-		_, act, err := s.tokens.FindByTokenHash(ctx, hash)
-		if err != nil {
-			if errors.Is(err, ErrNotFound) {
-				s.securityLog(ctx, SecInvalidToken, "", "", req.DeviceID, req.IP, "")
-				return ErrActivationMismatch
-			}
-			return err
-		}
-		if req.DeviceID != "" && act.DeviceID != req.DeviceID {
-			return ErrActivationMismatch
-		}
-		l, err := s.repo.GetByLicenseID(ctx, act.LicenseID)
-		if err != nil {
-			return err
-		}
-		if err := s.activationRepo.DeactivateByToken(ctx, l.ID, act.DeviceID, hash, now); err != nil {
-			return err
-		}
-		_ = s.auditLog(ctx, "", req.IP, "license.deactivate", "license", l.LicenseID,
-			map[string]any{"activation_id": act.ActivationID, "device_id": act.DeviceID})
-		return nil
-	}
-	// 旧路径:key + activation_id + device_id(兼容升级窗口期)
-	if req.Key == "" || req.ActivationID == "" || req.DeviceID == "" {
+	if req.Token == "" {
 		return ErrActivationMissing
 	}
-	payload, ok := s.verifyKey(ctx, req.Key)
-	if !ok {
-		return ErrInvalidSignature
-	}
-	l, err := s.repo.GetByLicenseID(ctx, payload.LicenseID)
+	hash := sha256Hex(req.Token)
+	_, act, err := s.tokens.FindByTokenHash(ctx, hash)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
-			return ErrLicenseNotFound
+			s.securityLog(ctx, SecInvalidToken, "", "", req.DeviceID, req.IP, "")
+			return ErrActivationMismatch
 		}
 		return err
 	}
-	// 旧凭据解绑(兼容两种格式):
-	//   - ACT-* 新展示 ID:按激活记录解绑(校验设备匹配)
-	//   - 旧 code(升级前客户端):已迁移为 token hash,按 hash 解绑
-	if strings.HasPrefix(req.ActivationID, "ACT-") {
-		act, err := s.activationRepo.GetActiveByActivationID(ctx, req.ActivationID)
-		if err != nil || act.DeviceID != req.DeviceID {
-			return ErrActivationMismatch
-		}
-		if err := s.activationRepo.DeactivateByID(ctx, act.ID, now); err != nil {
-			return err
-		}
-	} else {
-		if err := s.activationRepo.DeactivateByToken(ctx, l.ID, req.DeviceID, sha256Hex(req.ActivationID), now); err != nil {
-			return err
-		}
+	if req.DeviceID != "" && act.DeviceID != req.DeviceID {
+		return ErrActivationMismatch
 	}
+	l, err := s.repo.GetByLicenseID(ctx, act.LicenseID)
+	if err != nil {
+		return err
+	}
+	events, err := s.activationRepo.DeactivateByToken(ctx, l.ID, act.DeviceID, hash, now)
+	if err != nil {
+		return err
+	}
+	// 事务已提交:扇出事件到 SSE
+	s.PublishEvents(events)
 	_ = s.auditLog(ctx, "", req.IP, "license.deactivate", "license", l.LicenseID,
-		map[string]any{"device_id": req.DeviceID})
+		map[string]any{"activation_id": act.ActivationID, "device_id": act.DeviceID})
 	return nil
 }
 
-// DeactivateRequest 解绑请求(双路径)。
+// DeactivateRequest 解绑请求(V3:token 唯一凭据)。
 type DeactivateRequest struct {
-	Key          string // 旧路径兼容
-	Token        string // 新路径
-	ActivationID string // 旧路径兼容(旧 code,已 hash 迁移)
+	Token        string
 	DeviceID     string
 	Timestamp    int64
 	Nonce        string
@@ -189,11 +159,9 @@ type DeactivateRequest struct {
 	UserAgent    string
 }
 
-// VerifyRequest 定期验证请求(V3:不带完整 License Key)。
+// VerifyRequest 在线验证请求(V3:activation_token 唯一凭据)。
 type VerifyRequest struct {
-	Token          string // 新路径
-	Key            string // 旧路径兼容(升级窗口期)
-	ActivationID   string // 旧路径兼容
+	Token          string
 	DeviceID       string
 	ProductVersion string
 	Timestamp      int64
@@ -202,16 +170,16 @@ type VerifyRequest struct {
 	UserAgent      string
 }
 
-// Verify 定期在线验证(客户端每 24h 调用,V3):
-//   - 重放防护:timestamp ±5min + nonce 唯一(Skill §16)
-//   - token 凭据验证(Skill §13):凭据无效 → status=invalid(不泄露 License 存在性)
+// Verify 在线验证(V3):
+//   - 重放防护:timestamp ±5min + nonce 唯一
+//   - token 凭据验证:凭据无效 → status=invalid(不泄露 License 存在性)
 //   - License 吊销/过期 → status=revoked/expired(客户端禁用 Pro)
-//   - 版本控制:blocked_versions → CLIENT_VERSION_BLOCKED(Skill §21)
-//   - 有效 → 更新心跳 + token last_used,返回 server_time / minimum_client_version
+//   - 版本控制:blocked_versions → status=blocked
+//   - 有效 → 更新心跳 + token last_used,返回 server_time / minimum_client_version / state_version
 //
-// 旧路径(key + activation_id)兼容升级窗口期,凭据按迁移后的 token hash 校验。
+// Verify 是只读权威查询,不产生事件、不 bump state_version。
 func (s *LicenseService) Verify(ctx context.Context, req VerifyRequest) (map[string]any, error) {
-	// 重放防护(所有路径统一)
+	// 重放防护
 	if req.Timestamp > 0 || req.Nonce != "" {
 		if ok, err := s.replayAllowed(ctx, req.Timestamp, req.Nonce, req.IP); err != nil {
 			return nil, err
@@ -220,62 +188,33 @@ func (s *LicenseService) Verify(ctx context.Context, req VerifyRequest) (map[str
 		}
 	}
 
-	// ---------- 新路径:activation_token ----------
-	if req.Token != "" {
-		hash := sha256Hex(req.Token)
-		tok, act, err := s.tokens.FindByTokenHash(ctx, hash)
-		if err != nil {
-			if errors.Is(err, ErrNotFound) {
-				s.securityLog(ctx, SecInvalidToken, "", "", req.DeviceID, req.IP, "")
-				return s.verifyResult("invalid", nil), nil
-			}
-			return nil, err
-		}
-		if req.DeviceID != "" && act.DeviceID != req.DeviceID {
-			return s.verifyResult("invalid", nil), nil
-		}
-		if act.Status != model.ActivationActive {
-			return s.verifyResult("invalid", nil), nil
-		}
-		l, err := s.repo.GetByLicenseID(ctx, act.LicenseID)
-		if err != nil {
-			return nil, err
-		}
-		// 版本控制:blocked 版本禁止 Pro
-		if blocked, ver := s.versionBlocked(ctx, req.ProductVersion); blocked {
-			s.securityLog(ctx, SecClientVersionBlocked, l.LicenseID, act.ActivationID, act.DeviceID, req.IP, ver)
-			return s.verifyResultWith(l, "blocked"), nil
-		}
-		if l.Status == model.StatusRevoked || l.Status == model.StatusSuspended {
-			return s.verifyResult("revoked", l), nil
-		}
-		if l.ExpiresAt < Now() {
-			return s.verifyResult("expired", l), nil
-		}
-		// 心跳 + token 使用时间
-		_, _ = s.activationRepo.TouchLastSeen(ctx, l.ID, act.DeviceID, req.IP, req.ProductVersion, time.Unix(Now(), 0))
-		_ = s.tokens.TouchLastUsed(ctx, tok.ID, time.Unix(Now(), 0))
-		return s.verifyResultWith(l, "valid"), nil
-	}
-
-	// ---------- 旧路径:key + activation_id(升级窗口期兼容) ----------
-	if req.Key == "" {
+	// 唯一路径:activation_token
+	if req.Token == "" {
 		return s.verifyResult("invalid", nil), nil
 	}
-	payload, ok := s.verifyKey(ctx, req.Key)
-	if !ok {
-		s.securityLog(ctx, SecInvalidSignature, "", "", req.DeviceID, req.IP, "")
-		return s.verifyResult("invalid", nil), nil
-	}
-	l, err := s.repo.GetByLicenseID(ctx, payload.LicenseID)
+	hash := sha256Hex(req.Token)
+	tok, act, err := s.tokens.FindByTokenHash(ctx, hash)
 	if err != nil {
 		if errors.Is(err, ErrNotFound) {
+			s.securityLog(ctx, SecInvalidToken, "", "", req.DeviceID, req.IP, "")
 			return s.verifyResult("invalid", nil), nil
 		}
 		return nil, err
 	}
-	if blocked, _ := s.versionBlocked(ctx, req.ProductVersion); blocked {
-		return s.verifyResultWith(l, "blocked"), nil
+	if req.DeviceID != "" && act.DeviceID != req.DeviceID {
+		return s.verifyResult("invalid", nil), nil
+	}
+	if act.Status != model.ActivationActive {
+		return s.verifyResult("invalid", nil), nil
+	}
+	l, err := s.repo.GetByLicenseID(ctx, act.LicenseID)
+	if err != nil {
+		return nil, err
+	}
+	// 版本控制:blocked 版本禁止 Pro
+	if blocked, ver := s.versionBlocked(ctx, req.ProductVersion); blocked {
+		s.securityLog(ctx, SecClientVersionBlocked, l.LicenseID, act.ActivationID, act.DeviceID, req.IP, ver)
+		return s.verifyResultWith(l, act.StateVersion, "blocked"), nil
 	}
 	if l.Status == model.StatusRevoked || l.Status == model.StatusSuspended {
 		return s.verifyResult("revoked", l), nil
@@ -283,31 +222,10 @@ func (s *LicenseService) Verify(ctx context.Context, req VerifyRequest) (map[str
 	if l.ExpiresAt < Now() {
 		return s.verifyResult("expired", l), nil
 	}
-	if req.DeviceID == "" {
-		// 最旧格式:仅在线状态查询,不校验设备
-		return s.verifyResult("valid", l), nil
-	}
-	act, err := s.activationRepo.GetActiveByDevice(ctx, l.ID, req.DeviceID)
-	if err != nil {
-		if errors.Is(err, ErrNotFound) {
-			return s.verifyResult("invalid", nil), nil
-		}
-		return nil, err
-	}
-	// 旧凭据校验(兼容两种格式):
-	//   - ACT-* 新展示 ID:必须与该设备激活记录一致
-	//   - 旧 code(升级前客户端):按迁移后的 token hash 匹配
-	if req.ActivationID != "" {
-		if strings.HasPrefix(req.ActivationID, "ACT-") {
-			if act.ActivationID != req.ActivationID {
-				return s.verifyResult("invalid", nil), nil
-			}
-		} else if _, tact, err := s.tokens.FindByTokenHash(ctx, sha256Hex(req.ActivationID)); err != nil || tact.ID != act.ID {
-			return s.verifyResult("invalid", nil), nil
-		}
-	}
-	_, _ = s.activationRepo.TouchLastSeen(ctx, l.ID, req.DeviceID, req.IP, req.ProductVersion, time.Unix(Now(), 0))
-	return s.verifyResult("valid", l), nil
+	// 心跳 + token 使用时间(只读更新,不产生事件)
+	_, _ = s.activationRepo.TouchLastSeen(ctx, l.ID, act.DeviceID, req.IP, req.ProductVersion, time.Unix(Now(), 0))
+	_ = s.tokens.TouchLastUsed(ctx, tok.ID, time.Unix(Now(), 0))
+	return s.verifyResultWith(l, act.StateVersion, "valid"), nil
 }
 
 // ListActivations 某 License 的全部设备激活记录(管理端)。
@@ -322,7 +240,7 @@ func (s *LicenseService) ListActivations(ctx context.Context, licenseID string) 
 	return s.activationRepo.ListByLicense(ctx, l.ID)
 }
 
-// DeactivateActivation 管理端按激活记录 ID 单个解绑。
+// DeactivateActivation 管理端按激活记录 ID 单个解绑(持久化事件 + 发布)。
 func (s *LicenseService) DeactivateActivation(ctx context.Context, licenseID string, activationID int64, by, ip string) error {
 	l, err := s.resolveLicense(ctx, licenseID)
 	if err != nil {
@@ -331,15 +249,17 @@ func (s *LicenseService) DeactivateActivation(ctx context.Context, licenseID str
 		}
 		return err
 	}
-	if err := s.activationRepo.DeactivateByID(ctx, activationID, time.Unix(Now(), 0)); err != nil {
+	events, err := s.activationRepo.DeactivateByID(ctx, activationID, time.Unix(Now(), 0))
+	if err != nil {
 		return err
 	}
+	s.PublishEvents(events)
 	_ = s.auditLog(ctx, by, ip, "license.device_deactivate", "license", l.LicenseID,
 		map[string]any{"activation_id": activationID})
 	return nil
 }
 
-// ResetDevices 管理端重置某 License 全部设备(解绑所有激活 + 吊销 token)。
+// ResetDevices 管理端重置某 License 全部设备(解绑所有激活 + 吊销 token,持久化事件 + 发布)。
 func (s *LicenseService) ResetDevices(ctx context.Context, licenseID, by, ip string) (int, error) {
 	l, err := s.resolveLicense(ctx, licenseID)
 	if err != nil {
@@ -348,10 +268,11 @@ func (s *LicenseService) ResetDevices(ctx context.Context, licenseID, by, ip str
 		}
 		return 0, err
 	}
-	n, err := s.activationRepo.ResetDevices(ctx, l.ID, time.Unix(Now(), 0))
+	n, events, err := s.activationRepo.ResetDevices(ctx, l.ID, time.Unix(Now(), 0))
 	if err != nil {
 		return 0, err
 	}
+	s.PublishEvents(events)
 	_ = s.auditLog(ctx, by, ip, "license.devices_reset", "license", l.LicenseID,
 		map[string]any{"deactivated": n})
 	return int(n), nil
@@ -421,15 +342,19 @@ func (s *LicenseService) versionBlocked(ctx context.Context, productVersion stri
 // verifyResult 组装 verify 响应(不带额外字段)。
 // invalid 一律不携带 License 信息(不泄露 License 存在性)。
 func (s *LicenseService) verifyResult(status string, l *model.License) map[string]any {
-	return s.verifyResultWith(l, status)
+	return s.verifyResultWith(l, 0, status)
 }
 
-// verifyResultWith 组装 verify 响应:基础字段 + server_time + minimum_client_version + next_verify_after。
-func (s *LicenseService) verifyResultWith(l *model.License, status string) map[string]any {
+// verifyResultWith 组装 verify 响应:基础字段 + server_time + minimum_client_version + state_version。
+// stateVersion 为激活当前状态版本(客户端乱序保护用;invalid 路径为 0)。
+func (s *LicenseService) verifyResultWith(l *model.License, stateVersion int64, status string) map[string]any {
 	out := map[string]any{
 		"status":      status,
 		"valid":       status == "valid",
 		"server_time": Now(),
+	}
+	if stateVersion > 0 {
+		out["state_version"] = stateVersion
 	}
 	if l != nil {
 		out["license_id"] = l.LicenseID
@@ -438,10 +363,7 @@ func (s *LicenseService) verifyResultWith(l *model.License, status string) map[s
 		out["expires_at"] = l.ExpiresAt
 		out["features"] = l.Features
 	}
-	if status == "valid" || status == "blocked" {
-		out["next_verify_after"] = NextVerifyAfter
-	}
-	// 版本控制字段(Skill §21):客户端对比 minimum_client_version 判断 UPDATE_REQUIRED
+	// 版本控制字段:客户端对比 minimum_client_version 判断 UPDATE_REQUIRED
 	if s.settings != nil {
 		if v, err := s.settings.Get(context.Background(), "minimum_client_version"); err == nil && v != "" {
 			out["minimum_client_version"] = v

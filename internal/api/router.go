@@ -14,17 +14,18 @@ import (
 //
 // 路由划分(对外经反代 /license-api/ 剥离前缀后进入,内部无 /license-api 前缀):
 //   - GET  /health(z)            健康检查(Caddy / Docker healthcheck 用)
-//   - /api/v1/public/*           公开 API(激活/验证/解绑,供 Docker_Manager_Go 客户端)
+//   - /api/v3/*                  公开 API V3(激活/验证/解绑/SSE 事件,供 Docker_Manager_Go 客户端)
 //   - /api/v1/admin/*            管理 API(全部需要 JWT 认证)
 //
 // 对外规范 Base URL(生产固定):
 //
 //	https://manager.kejizero.xyz/license-api
 //
-// 客户端请求 = Base + "/api/v1/public/activate|verify|deactivate"
+// 客户端请求 = Base + "/api/v3/activate|verify|deactivate|events"
 // 反代(Caddy/nginx)负责剥离 /license-api 前缀。
 //
 // 管理 API 匿名不可访问,且与公开 API 物理分离。
+// V1/V2 公开 API(/api/v1/public)已删除,不存在旧 License Runtime。
 func Router(d *Deps) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.Recovery())
@@ -37,18 +38,17 @@ func Router(d *Deps) *gin.Engine {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 
-	// 公开 API 与管理 API 前缀均可由环境变量覆盖(默认 /api/v1/public、/api/v1/admin)
-	v1 := r.Group("/api/v1")
-
-	// ---------- 公开(在线授权闭环,供 Docker_Manager_Go 客户端) ----------
-	pub := v1.Group("/public")
+	// ---------- 公开 API V3(在线授权闭环 + SSE 主动同步,供 Docker_Manager_Go 客户端) ----------
+	v3 := r.Group("/api/v3")
 	{
-		pub.POST("/activate", publicActivate(d))
-		pub.POST("/verify", publicVerify(d))
-		pub.POST("/deactivate", publicDeactivate(d))
+		v3.POST("/activate", publicActivate(d))
+		v3.POST("/verify", publicVerify(d))
+		v3.POST("/deactivate", publicDeactivate(d))
+		v3.GET("/events", sseEventStream(d)) // SSE 事件流(Last-Event-ID 重放)
 	}
 
 	// ---------- 管理 ----------
+	v1 := r.Group("/api/v1")
 	admin := v1.Group("/admin")
 	{
 		admin.POST("/login", adminLogin(d))
@@ -74,6 +74,7 @@ func Router(d *Deps) *gin.Engine {
 		authed.POST("/licenses/:id/extend", adminExtendLicense(d))
 		authed.POST("/licenses/:id/revoke", adminRevokeLicense(d))
 		authed.GET("/licenses/:id/activations", adminListActivations(d))
+		authed.GET("/licenses/:id/events", adminLicenseEvents(d))
 		authed.POST("/licenses/:id/activations/:aid/deactivate", adminDeactivateActivation(d))
 		authed.POST("/licenses/:id/reset-devices", adminResetDevices(d))
 

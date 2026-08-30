@@ -29,6 +29,7 @@ import (
 	"github.com/DockerManger/Docker_Manager_License/internal/config"
 	"github.com/DockerManger/Docker_Manager_License/internal/crypto"
 	"github.com/DockerManger/Docker_Manager_License/internal/database"
+	"github.com/DockerManger/Docker_Manager_License/internal/events"
 	"github.com/DockerManger/Docker_Manager_License/internal/service"
 )
 
@@ -139,6 +140,8 @@ func runServer() int {
 	// 组装依赖
 	securityRepo := service.NewSecurityEventRepo(pool)
 	settingsRepo := service.NewServerSettingsRepo(pool)
+	eventRepo := service.NewEventRepo(pool)
+	broker := events.NewBroker()
 	licenseSvc := service.NewLicenseService(
 		service.NewLicenseRepo(pool),
 		service.NewActivationRepo(pool),
@@ -150,6 +153,8 @@ func runServer() int {
 		settingsRepo,
 		service.NewCustomerRepo(pool),
 		service.NewSubscriptionRepo(pool),
+		eventRepo,
+		broker,
 		kp, cfg.LicenseKeyID,
 	)
 	// 注册当前签名密钥到注册表(key rotation 基础;旧公钥永不删除)
@@ -182,11 +187,13 @@ func runServer() int {
 		SubscriptionRepo: service.NewSubscriptionRepo(pool),
 		Security:         securityRepo,
 		Settings:         settingsRepo,
+		EventRepo:        eventRepo,
+		Events:           broker,
 		JWTSecret:        cfg.JWTSecret,
 		JWTTTL:           cfg.JWTTTL,
 		Limiter:          auth.NewLoginLimiter(15*time.Minute, 10, 15*time.Minute),
 		ActivateLim:      auth.NewLoginLimiter(15*time.Minute, 20, 15*time.Minute),  // 激活/解绑:15min 20 次,防 Key 爆破
-		VerifyLim:        auth.NewLoginLimiter(15*time.Minute, 120, 15*time.Minute), // 验证:15min 120 次(24h/设备 足够宽松)
+		VerifyLim:        auth.NewLoginLimiter(15*time.Minute, 120, 15*time.Minute), // 验证:15min 120 次(事件驱动,足够宽松)
 	}
 
 	gin.SetMode(gin.ReleaseMode)

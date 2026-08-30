@@ -237,6 +237,10 @@ func adminUpdateSettings(d *Deps) gin.HandlerFunc {
 			handleError(c, err)
 			return
 		}
+		// V3:版本策略变化 → 全局广播事件(所有 SSE 订阅者收到后自动 Verify 获取新策略)
+		_ = d.LicenseSvc.PublishGlobal(c.Request.Context(), service.EvtVersionPolicyChanged, map[string]any{
+			"key": key, "value": strings.TrimSpace(req.Value),
+		})
 		_ = d.AuditRepo.Log(c.Request.Context(), &model.AuditLog{
 			Admin: c.GetString(ctxAdminKey), Action: "settings.update",
 			ResourceType: "setting", ResourceID: key, IP: clientIP(c),

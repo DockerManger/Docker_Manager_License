@@ -38,7 +38,7 @@ func TestV3TokenVerify(t *testing.T) {
 	_, _, token := testIssueV3(t, r, 3)
 
 	now := time.Now().Unix()
-	w := doJSON(t, r, "POST", "/api/v1/public/verify", "", map[string]any{
+	w := doJSON(t, r, "POST", "/api/v3/verify", "", map[string]any{
 		"activation_token": token,
 		"device_id":        "v3-device-1",
 		"product_version":  "v3.0.0",
@@ -69,7 +69,7 @@ func TestV3VerifyWrongDevice(t *testing.T) {
 	r := testRouter(d)
 	_, _, token := testIssueV3(t, r, 3)
 
-	w := doJSON(t, r, "POST", "/api/v1/public/verify", "", map[string]any{
+	w := doJSON(t, r, "POST", "/api/v3/verify", "", map[string]any{
 		"activation_token": token,
 		"device_id":        "other-device",
 		"timestamp":        time.Now().Unix(),
@@ -93,7 +93,7 @@ func TestV3ReplayProtection(t *testing.T) {
 	_, _, token := testIssueV3(t, r, 3)
 
 	// 首次使用 nonce → 成功
-	w := doJSON(t, r, "POST", "/api/v1/public/verify", "", map[string]any{
+	w := doJSON(t, r, "POST", "/api/v3/verify", "", map[string]any{
 		"activation_token": token,
 		"device_id":        "v3-device-1",
 		"timestamp":        time.Now().Unix(),
@@ -103,7 +103,7 @@ func TestV3ReplayProtection(t *testing.T) {
 		t.Fatalf("first verify: %d", w.Code)
 	}
 	// 重用同一 nonce → REPLAY_DETECTED
-	w = doJSON(t, r, "POST", "/api/v1/public/verify", "", map[string]any{
+	w = doJSON(t, r, "POST", "/api/v3/verify", "", map[string]any{
 		"activation_token": token,
 		"device_id":        "v3-device-1",
 		"timestamp":        time.Now().Unix(),
@@ -122,7 +122,7 @@ func TestV3ReplayProtection(t *testing.T) {
 		t.Fatalf("want REPLAY_DETECTED, got %s", eb.Error.Code)
 	}
 	// 时间戳越界(10 分钟前)→ REPLAY_DETECTED
-	w = doJSON(t, r, "POST", "/api/v1/public/verify", "", map[string]any{
+	w = doJSON(t, r, "POST", "/api/v3/verify", "", map[string]any{
 		"activation_token": token,
 		"device_id":        "v3-device-1",
 		"timestamp":        time.Now().Unix() - 600,
@@ -141,7 +141,7 @@ func TestV3SecurityEvents(t *testing.T) {
 	adminTok := login(t, r)
 
 	// 无效 token 验证 → invalid + 记录 security event
-	w := doJSON(t, r, "POST", "/api/v1/public/verify", "", map[string]any{
+	w := doJSON(t, r, "POST", "/api/v3/verify", "", map[string]any{
 		"activation_token": "totally-invalid-token",
 		"device_id":        "attacker-dev",
 		"timestamp":        time.Now().Unix(),
@@ -204,7 +204,7 @@ func TestV3VersionControl(t *testing.T) {
 	}
 
 	// blocked 版本 → status=blocked
-	w = doJSON(t, r, "POST", "/api/v1/public/verify", "", map[string]any{
+	w = doJSON(t, r, "POST", "/api/v3/verify", "", map[string]any{
 		"activation_token": token,
 		"device_id":        "v3-device-1",
 		"product_version":  "1.0.0",
@@ -220,7 +220,7 @@ func TestV3VersionControl(t *testing.T) {
 	}
 
 	// 正常版本 → valid + minimum_client_version
-	w = doJSON(t, r, "POST", "/api/v1/public/verify", "", map[string]any{
+	w = doJSON(t, r, "POST", "/api/v3/verify", "", map[string]any{
 		"activation_token": token,
 		"device_id":        "v3-device-1",
 		"product_version":  "2.0.0",
@@ -256,7 +256,7 @@ func TestV3TokenDeactivate(t *testing.T) {
 	_, _, token := testIssueV3(t, r, 3)
 
 	// 错设备解绑 → 404
-	w := doJSON(t, r, "POST", "/api/v1/public/deactivate", "", map[string]any{
+	w := doJSON(t, r, "POST", "/api/v3/deactivate", "", map[string]any{
 		"activation_token": token,
 		"device_id":        "other-device",
 		"timestamp":        time.Now().Unix(),
@@ -266,7 +266,7 @@ func TestV3TokenDeactivate(t *testing.T) {
 		t.Fatalf("wrong device deactivate must be 404, got %d %s", w.Code, w.Body.String())
 	}
 	// 正确解绑 → ok
-	w = doJSON(t, r, "POST", "/api/v1/public/deactivate", "", map[string]any{
+	w = doJSON(t, r, "POST", "/api/v3/deactivate", "", map[string]any{
 		"activation_token": token,
 		"device_id":        "v3-device-1",
 		"timestamp":        time.Now().Unix(),
@@ -276,7 +276,7 @@ func TestV3TokenDeactivate(t *testing.T) {
 		t.Fatalf("deactivate: %d %s", w.Code, w.Body.String())
 	}
 	// 解绑后 verify → invalid
-	w = doJSON(t, r, "POST", "/api/v1/public/verify", "", map[string]any{
+	w = doJSON(t, r, "POST", "/api/v3/verify", "", map[string]any{
 		"activation_token": token,
 		"device_id":        "v3-device-1",
 		"timestamp":        time.Now().Unix(),
@@ -362,7 +362,7 @@ func TestCustomersSubscriptions(t *testing.T) {
 		t.Fatalf("payload subscription_id missing: %s", issued.Payload)
 	}
 	// Key 可正常激活
-	w = doJSON(t, r, "POST", "/api/v1/public/activate", "", map[string]any{
+	w = doJSON(t, r, "POST", "/api/v3/activate", "", map[string]any{
 		"key": issued.Key, "device_id": "acme-dev-1",
 	})
 	if w.Code != 200 {

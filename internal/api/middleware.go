@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/DockerManger/Docker_Manager_License/internal/auth"
+	"github.com/DockerManger/Docker_Manager_License/internal/events"
 	"github.com/DockerManger/Docker_Manager_License/internal/service"
 )
 
@@ -21,6 +22,8 @@ type Deps struct {
 	SubscriptionRepo *service.SubscriptionRepo
 	Security         *service.SecurityEventRepo
 	Settings         *service.ServerSettingsRepo
+	EventRepo        *service.EventRepo
+	Events           *events.Broker
 	JWTSecret        string
 	JWTTTL           time.Duration
 	Limiter          *auth.LoginLimiter // 登录限流

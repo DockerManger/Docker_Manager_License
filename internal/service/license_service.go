@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/DockerManger/Docker_Manager_License/internal/crypto"
+	"github.com/DockerManger/Docker_Manager_License/internal/events"
 	"github.com/DockerManger/Docker_Manager_License/internal/license"
 	"github.com/DockerManger/Docker_Manager_License/internal/model"
 )
@@ -19,6 +20,9 @@ var uuidRe = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[
 
 // LicenseService License 业务核心:签发 / 查询 / 延期 / 吊销 / 在线激活验证。
 // 签名只在这里发生(依赖 Ed25519 私钥),API 层只做参数传递。
+//
+// V3 Event-Driven:状态变更在 repo 层同事务持久化事件(Event Store),
+// 提交后由 PublishEvents 扇出到 SSE 订阅者(Broker)。
 type LicenseService struct {
 	repo           *LicenseRepo
 	activationRepo *ActivationRepo
@@ -30,6 +34,8 @@ type LicenseService struct {
 	settings       *ServerSettingsRepo
 	customers      *CustomerRepo
 	subscriptions  *SubscriptionRepo
+	eventRepo      *EventRepo
+	broker         *events.Broker
 	keyPair        *crypto.KeyPair
 	keyID          string
 }
@@ -38,13 +44,46 @@ type LicenseService struct {
 func NewLicenseService(repo *LicenseRepo, activationRepo *ActivationRepo, signingKeys *SigningKeyRepo,
 	audit *AuditRepo, tokens *ActivationTokenRepo, security *SecurityEventRepo,
 	nonces *NonceRepo, settings *ServerSettingsRepo, customers *CustomerRepo,
-	subscriptions *SubscriptionRepo, keyPair *crypto.KeyPair, keyID string) *LicenseService {
+	subscriptions *SubscriptionRepo, eventRepo *EventRepo, broker *events.Broker,
+	keyPair *crypto.KeyPair, keyID string) *LicenseService {
 	return &LicenseService{
 		repo: repo, activationRepo: activationRepo, signingKeys: signingKeys,
 		audit: audit, tokens: tokens, security: security, nonces: nonces,
 		settings: settings, customers: customers, subscriptions: subscriptions,
+		eventRepo: eventRepo, broker: broker,
 		keyPair: keyPair, keyID: keyID,
 	}
+}
+
+// PublishEvents 提交后扇出已持久化事件到 SSE 订阅者(尽力而为,不阻塞主流程)。
+func (s *LicenseService) PublishEvents(events []*model.LicenseEvent) {
+	if s.broker == nil || len(events) == 0 {
+		return
+	}
+	for _, ev := range events {
+		s.broker.Publish(ev)
+	}
+}
+
+// PublishGlobal 持久化并广播一条全局事件(activation_id='',所有订阅者收到)。
+// 用于 version_policy.changed 等不针对单个激活的事件。
+func (s *LicenseService) PublishGlobal(ctx context.Context, evType string, payload map[string]any) error {
+	ev := newEvent(evType, "", "", "", 0, payload)
+	// 全局事件:直接持久化(不在业务事务内;业务已先提交)
+	tx, err := s.eventRepo.Pool().Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	ev, err = s.eventRepo.InsertTx(ctx, tx, ev)
+	if err != nil {
+		return err
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+	s.broker.Publish(ev)
+	return nil
 }
 
 // verifyKey 按 payload.key_id 从注册表取公钥验签。
@@ -256,6 +295,14 @@ func (s *LicenseService) Extend(ctx context.Context, licenseID string, days int,
 	if err := s.saveRevision(ctx, l, payload, key, reason, by); err != nil {
 		return nil, err
 	}
+	// V3:延期影响授权状态 → 活跃激活各发一条 license.changed(客户端收到后自动 Verify)
+	if events, err := s.activationRepo.LicenseStateChanged(ctx, l.ID, EvtLicenseChanged, map[string]any{
+		"status": l.Status, "expires_at": newExp, "plan": l.Plan, "features": l.Features,
+	}); err != nil {
+		return nil, err
+	} else {
+		s.PublishEvents(events)
+	}
 	if err := s.auditLog(ctx, by, ip, "license.extend", "license", l.LicenseID,
 		map[string]any{"days": days, "expires_at": newExp}); err != nil {
 		return nil, err
@@ -265,6 +312,8 @@ func (s *LicenseService) Extend(ctx context.Context, licenseID string, days int,
 }
 
 // Revoke 吊销(软删除,保留记录与修订)。revoked_by 记录操作管理员。
+// V3 Event-Driven:吊销状态 + 全部激活 revoked + token 吊销 + 事件持久化在同一事务,
+// 提交后 Publish 到 SSE —— 客户端无需等待任何周期检查即可实时触达。
 func (s *LicenseService) Revoke(ctx context.Context, licenseID, reason, by, ip string) (*model.License, error) {
 	l, err := s.resolveLicense(ctx, licenseID)
 	if err != nil {
@@ -274,13 +323,13 @@ func (s *LicenseService) Revoke(ctx context.Context, licenseID, reason, by, ip s
 		return nil, fmt.Errorf("%w: already revoked", ErrConflict)
 	}
 	now := Now()
-	if err := s.repo.UpdateStatus(ctx, l.ID, model.StatusRevoked, &now, reason, by); err != nil {
+	// 同事务:license 状态 + 激活 revoked + token 吊销 + activation.revoked 事件
+	_, events, err := s.activationRepo.RevokeLicenseActivations(ctx, l.ID, model.StatusRevoked, reason, by, time.Unix(now, 0))
+	if err != nil {
 		return nil, err
 	}
-	// 吊销后立即失效全部激活 token(客户端下次 verify 即 invalid)
-	if _, err := s.activationRepo.ResetDevices(ctx, l.ID, time.Unix(now, 0)); err != nil {
-		return nil, err
-	}
+	// 事务已提交:扇出事件到 SSE(客户端收到后立即 V3 Verify → revoked)
+	s.PublishEvents(events)
 	if err := s.auditLog(ctx, by, ip, "license.revoke", "license", l.LicenseID,
 		map[string]any{"reason": reason}); err != nil {
 		return nil, err
@@ -309,6 +358,37 @@ func (s *LicenseService) Stats(ctx context.Context) (map[string]any, error) {
 // PublicKey 返回当前签发公钥(供测试与集成文档输出)。
 func (s *LicenseService) PublicKey() []byte {
 	return s.keyPair.Public
+}
+
+// ValidateActivationToken 校验 SSE 订阅凭据(activation_token + device_id 必须匹配激活)。
+// 返回激活记录;凭据无效返回 ok=false(不泄露 License 存在性)。
+func (s *LicenseService) ValidateActivationToken(ctx context.Context, token, deviceID string) (*model.Activation, bool) {
+	if token == "" {
+		return nil, false
+	}
+	_, act, err := s.tokens.FindByTokenHash(ctx, sha256Hex(token))
+	if err != nil {
+		return nil, false
+	}
+	if act.Status != model.ActivationActive {
+		return nil, false
+	}
+	if deviceID != "" && act.DeviceID != deviceID {
+		return nil, false
+	}
+	return act, true
+}
+
+// ListLicenseEvents 某 License 的事件历史(管理端审计,时间倒序;limit<=0 用默认)。
+func (s *LicenseService) ListLicenseEvents(ctx context.Context, licenseID string, limit int) ([]*model.LicenseEvent, error) {
+	l, err := s.resolveLicense(ctx, licenseID)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return nil, ErrLicenseNotFound
+		}
+		return nil, err
+	}
+	return s.eventRepo.ListForLicense(ctx, l.LicenseID, limit)
 }
 
 // ---------- 内部 ----------

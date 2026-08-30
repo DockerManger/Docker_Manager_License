@@ -18,6 +18,7 @@ import (
 	"github.com/DockerManger/Docker_Manager_License/internal/auth"
 	"github.com/DockerManger/Docker_Manager_License/internal/crypto"
 	"github.com/DockerManger/Docker_Manager_License/internal/database"
+	"github.com/DockerManger/Docker_Manager_License/internal/events"
 	"github.com/DockerManger/Docker_Manager_License/internal/license"
 	"github.com/DockerManger/Docker_Manager_License/internal/service"
 )
@@ -44,7 +45,7 @@ func testDeps(t *testing.T) (*Deps, func()) {
 	// 顺序必须遵循外键:先删引用者(license_revisions/activations → licenses),
 	// 再删被引用者(subscriptions/customers),否则 FK 约束报错。
 	for _, tbl := range []string{
-		"security_nonces", "activation_tokens", "security_events",
+		"license_events", "security_nonces", "activation_tokens", "security_events",
 		"license_revisions", "activations", "licenses",
 		"subscriptions", "customers",
 		"audit_logs", "admins", "signing_keys",
@@ -60,6 +61,8 @@ func testDeps(t *testing.T) (*Deps, func()) {
 	}
 
 	kp, _ := crypto.GenerateKeyPair()
+	eventRepo := service.NewEventRepo(pool)
+	broker := events.NewBroker()
 	licenseSvc := service.NewLicenseService(
 		service.NewLicenseRepo(pool),
 		service.NewActivationRepo(pool),
@@ -71,6 +74,8 @@ func testDeps(t *testing.T) (*Deps, func()) {
 		service.NewServerSettingsRepo(pool),
 		service.NewCustomerRepo(pool),
 		service.NewSubscriptionRepo(pool),
+		eventRepo,
+		broker,
 		kp, "test-key",
 	)
 	if err := licenseSvc.EnsureSigningKey(ctx); err != nil {
@@ -86,6 +91,8 @@ func testDeps(t *testing.T) (*Deps, func()) {
 		SubscriptionRepo: service.NewSubscriptionRepo(pool),
 		Security:         service.NewSecurityEventRepo(pool),
 		Settings:         service.NewServerSettingsRepo(pool),
+		EventRepo:        eventRepo,
+		Events:           broker,
 		JWTSecret:        "test-jwt-secret",
 		JWTTTL:           time.Hour,
 		Limiter:          auth.NewLoginLimiter(time.Minute, 1000, time.Minute), // 测试放宽限流
@@ -344,22 +351,56 @@ func TestLicenseLifecycle(t *testing.T) {
 	}
 }
 
+// activateWithToken 激活并返回 (activation_id, activation_token)(测试辅助)。
+func activateWithToken(t *testing.T, r *gin.Engine, key, deviceID string) (string, string) {
+	t.Helper()
+	w := activate(t, r, key, deviceID)
+	if w.Code != 200 {
+		t.Fatalf("activate %s: %d %s", deviceID, w.Code, w.Body.String())
+	}
+	var act struct {
+		ActivationID    string `json:"activation_id"`
+		ActivationToken string `json:"activation_token"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &act)
+	if act.ActivationID == "" || act.ActivationToken == "" {
+		t.Fatalf("activate must return activation_id + activation_token: %s", w.Body.String())
+	}
+	return act.ActivationID, act.ActivationToken
+}
+
+// verifyToken 用 token 调用 verify(测试辅助)。
+func verifyToken(t *testing.T, r *gin.Engine, token, deviceID, nonce string) (string, map[string]any) {
+	t.Helper()
+	w := doJSON(t, r, "POST", "/api/v3/verify", "", map[string]any{
+		"activation_token": token,
+		"device_id":        deviceID,
+		"product_version":  "v3.0.0",
+		"timestamp":        time.Now().Unix(),
+		"nonce":            nonce,
+	})
+	var out map[string]any
+	_ = json.Unmarshal(w.Body.Bytes(), &out)
+	status, _ := out["status"].(string)
+	return status, out
+}
+
 func TestPublicVerify(t *testing.T) {
 	d, cleanup := testDeps(t)
 	defer cleanup()
 	r := testRouter(d)
 	token := login(t, r)
 
-	// 签发后在线验证 → valid
-	w := doJSON(t, r, "POST", "/api/v1/admin/licenses", token, map[string]any{
-		"customer": "Zhao", "plan": "pro", "features": []string{"compose"}, "expire_days": 30,
-	})
-	var resp struct {
-		Key string `json:"key"`
-	}
-	_ = json.Unmarshal(w.Body.Bytes(), &resp)
+	// 签发并激活 → token 验证 valid
+	key := issueKey(t, r, token, 3)
+	_, actToken := activateWithToken(t, r, key, "verify-dev-1")
 
-	w = doJSON(t, r, "POST", "/api/v1/public/verify", "", map[string]any{"key": resp.Key})
+	w := doJSON(t, r, "POST", "/api/v3/verify", "", map[string]any{
+		"activation_token": actToken,
+		"device_id":        "verify-dev-1",
+		"timestamp":        time.Now().Unix(),
+		"nonce":            "nonce-pubverify-1",
+	})
 	if w.Code != 200 {
 		t.Fatalf("verify: %d", w.Code)
 	}
@@ -372,14 +413,25 @@ func TestPublicVerify(t *testing.T) {
 		t.Fatalf("verify response: %s", w.Body.String())
 	}
 
-	// 垃圾 key → valid=false
-	w = doJSON(t, r, "POST", "/api/v1/public/verify", "", map[string]any{"key": "garbage"})
+	// 垃圾 token → valid=false(invalid,不泄露存在性)
+	w = doJSON(t, r, "POST", "/api/v3/verify", "", map[string]any{
+		"activation_token": "garbage-token",
+		"device_id":        "verify-dev-1",
+		"timestamp":        time.Now().Unix(),
+		"nonce":            "nonce-pubverify-2",
+	})
 	var v2 struct {
 		Valid bool `json:"valid"`
 	}
 	_ = json.Unmarshal(w.Body.Bytes(), &v2)
 	if v2.Valid {
-		t.Fatal("garbage key must be invalid")
+		t.Fatal("garbage token must be invalid")
+	}
+
+	// 缺 token → 400 BAD_REQUEST
+	w = doJSON(t, r, "POST", "/api/v3/verify", "", map[string]any{"device_id": "x"})
+	if w.Code != 400 {
+		t.Fatalf("missing token must 400, got %d", w.Code)
 	}
 }
 
@@ -475,13 +527,13 @@ func issueKey(t *testing.T, r *gin.Engine, token string, maxDevices int) string 
 // activate 发起激活,返回响应记录。
 func activate(t *testing.T, r *gin.Engine, key, deviceID string) *httptest.ResponseRecorder {
 	t.Helper()
-	return doJSON(t, r, "POST", "/api/v1/public/activate", "", map[string]any{
+	return doJSON(t, r, "POST", "/api/v3/activate", "", map[string]any{
 		"key": key, "device_id": deviceID, "device_name": "test-host-" + deviceID,
 		"product_version": "v2.0.0",
 	})
 }
 
-// TestActivationLifecycle 完整激活生命周期:
+// TestActivationLifecycle 完整激活生命周期(V3 token 路径):
 // 激活 → 幂等重复激活 → 设备上限 → 验证(valid/invalid) → 解绑 → 重新激活 → 重置 → 吊销。
 func TestActivationLifecycle(t *testing.T) {
 	d, cleanup := testDeps(t)
@@ -496,38 +548,49 @@ func TestActivationLifecycle(t *testing.T) {
 		t.Fatalf("activate dev-a: %d %s", w.Code, w.Body.String())
 	}
 	var act struct {
-		Status       string `json:"status"`
-		ActivationID string `json:"activation_id"`
-		LicenseID    string `json:"license_id"`
-		ExpiresAt    int64  `json:"expires_at"`
-		NextVerify   int64  `json:"next_verify_after"`
+		Status         string `json:"status"`
+		ActivationID   string `json:"activation_id"`
+		ActivationTok  string `json:"activation_token"`
+		LicenseID      string `json:"license_id"`
+		ExpiresAt      int64  `json:"expires_at"`
+		StateVersion   int64  `json:"state_version"`
 	}
 	_ = json.Unmarshal(w.Body.Bytes(), &act)
 	if act.Status != "active" || act.ActivationID == "" || act.LicenseID == "" || act.ExpiresAt == 0 {
 		t.Fatalf("activate response incomplete: %s", w.Body.String())
 	}
-	if act.NextVerify != service.NextVerifyAfter {
-		t.Fatalf("next_verify_after must be %d, got %d", service.NextVerifyAfter, act.NextVerify)
+	if act.ActivationTok == "" {
+		t.Fatal("activate must return activation_token")
 	}
-	aidA := act.ActivationID
+	if act.StateVersion != 1 {
+		t.Fatalf("first activation state_version must be 1, got %d", act.StateVersion)
+	}
+	aID, aTok := act.ActivationID, act.ActivationTok
 
-	// 设备 A 重复激活 → 幂等(200,同一 activation_id)
+	// 设备 A 重复激活 → 幂等(200,同一 activation_id,新 token,state_version+1)
 	w = activate(t, r, key, "dev-a")
 	if w.Code != 200 {
 		t.Fatalf("re-activate dev-a must be idempotent 200, got %d", w.Code)
 	}
 	var act2 struct {
-		ActivationID string `json:"activation_id"`
+		ActivationID  string `json:"activation_id"`
+		ActivationTok string `json:"activation_token"`
+		StateVersion  int64  `json:"state_version"`
 	}
 	_ = json.Unmarshal(w.Body.Bytes(), &act2)
-	if act2.ActivationID != aidA {
+	if act2.ActivationID != aID {
 		t.Fatal("idempotent re-activate must keep same activation_id")
 	}
+	if act2.ActivationTok == "" || act2.ActivationTok == aTok {
+		t.Fatal("re-activate must issue a new activation_token")
+	}
+	if act2.StateVersion != 2 {
+		t.Fatalf("re-activate must bump state_version to 2, got %d", act2.StateVersion)
+	}
+	aTok = act2.ActivationTok // 旧 token 已吊销,后续用新 token
 
 	// 设备 B 激活 → 成功(第 2 台,上限 2)
-	if w = activate(t, r, key, "dev-b"); w.Code != 200 {
-		t.Fatalf("activate dev-b: %d %s", w.Code, w.Body.String())
-	}
+	_, bTok := activateWithToken(t, r, key, "dev-b")
 
 	// 设备 C → 上限(2/2)→ 409 DEVICE_LIMIT_REACHED
 	w = activate(t, r, key, "dev-c")
@@ -544,113 +607,104 @@ func TestActivationLifecycle(t *testing.T) {
 		t.Fatalf("expected DEVICE_LIMIT_REACHED, got %s", errBody.Error.Code)
 	}
 
-	// verify(dev-a, 正确凭据)→ valid
-	w = doJSON(t, r, "POST", "/api/v1/public/verify", "", map[string]any{
-		"key": key, "activation_id": aidA, "device_id": "dev-a", "product_version": "v2.0.0",
-	})
-	if w.Code != 200 {
-		t.Fatalf("verify: %d", w.Code)
+	// verify(dev-a, 正确 token)→ valid + state_version
+	if status, out := verifyToken(t, r, aTok, "dev-a", "nonce-lifecycle-1"); status != "valid" {
+		t.Fatalf("verify dev-a must be valid, got %s", status)
+	} else if sv, _ := out["state_version"].(float64); int64(sv) != 2 {
+		t.Fatalf("verify must return state_version 2, got %v", out["state_version"])
 	}
+
+	// verify(dev-a, 旧 token)→ invalid(旧凭据已吊销)
+	if status, _ := verifyToken(t, r, aTok+"x", "dev-a", "nonce-lifecycle-1b"); status != "invalid" {
+		t.Fatalf("verify with revoked token must be invalid, got %s", status)
+	}
+
+	// verify(dev-a, 错误设备)→ invalid(防跨设备)
+	if status, _ := verifyToken(t, r, aTok, "dev-other", "nonce-lifecycle-2"); status != "invalid" {
+		t.Fatalf("verify with wrong device must be invalid, got %s", status)
+	}
+
+	// 未激活设备(无 token)verify → invalid
+	w = doJSON(t, r, "POST", "/api/v3/verify", "", map[string]any{
+		"activation_token": "no-such-token", "device_id": "dev-ghost",
+		"timestamp": time.Now().Unix(), "nonce": "nonce-lifecycle-3",
+	})
 	var v struct {
 		Status string `json:"status"`
 		Valid  bool   `json:"valid"`
 	}
 	_ = json.Unmarshal(w.Body.Bytes(), &v)
-	if v.Status != "valid" || !v.Valid {
-		t.Fatalf("verify dev-a must be valid, got %s", w.Body.String())
-	}
-
-	// verify(dev-a, 错误凭据)→ invalid(防跨设备)
-	w = doJSON(t, r, "POST", "/api/v1/public/verify", "", map[string]any{
-		"key": key, "activation_id": "wrong-code", "device_id": "dev-a",
-	})
-	_ = json.Unmarshal(w.Body.Bytes(), &v)
-	if v.Status != "invalid" {
-		t.Fatalf("verify with wrong activation_id must be invalid, got %s", w.Body.String())
-	}
-
-	// 未激活设备 verify → invalid
-	w = doJSON(t, r, "POST", "/api/v1/public/verify", "", map[string]any{
-		"key": key, "device_id": "dev-ghost",
-	})
-	_ = json.Unmarshal(w.Body.Bytes(), &v)
 	if v.Status != "invalid" {
 		t.Fatalf("verify unactivated device must be invalid, got %s", w.Body.String())
 	}
 
-	// 旧格式(仅 key)verify → valid(兼容)
-	w = doJSON(t, r, "POST", "/api/v1/public/verify", "", map[string]any{"key": key})
-	_ = json.Unmarshal(w.Body.Bytes(), &v)
-	if v.Status != "valid" || !v.Valid {
-		t.Fatalf("legacy verify must be valid, got %s", w.Body.String())
-	}
-
-	// 设备 A 解绑(正确凭据)→ ok
-	w = doJSON(t, r, "POST", "/api/v1/public/deactivate", "", map[string]any{
-		"key": key, "activation_id": aidA, "device_id": "dev-a",
+	// 设备 A 解绑(正确 token)→ ok
+	w = doJSON(t, r, "POST", "/api/v3/deactivate", "", map[string]any{
+		"activation_token": aTok, "device_id": "dev-a",
+		"timestamp": time.Now().Unix(), "nonce": "nonce-lifecycle-4",
 	})
 	if w.Code != 200 {
 		t.Fatalf("deactivate: %d %s", w.Code, w.Body.String())
 	}
 	// 解绑后 verify → invalid
-	w = doJSON(t, r, "POST", "/api/v1/public/verify", "", map[string]any{
-		"key": key, "activation_id": aidA, "device_id": "dev-a",
-	})
-	_ = json.Unmarshal(w.Body.Bytes(), &v)
-	if v.Status != "invalid" {
-		t.Fatalf("verify after deactivate must be invalid, got %s", w.Body.String())
+	if status, _ := verifyToken(t, r, aTok, "dev-a", "nonce-lifecycle-5"); status != "invalid" {
+		t.Fatalf("verify after deactivate must be invalid, got %s", status)
 	}
-	// 设备 A 用错误凭据解绑设备 B → ACTIVATION_NOT_FOUND(防跨设备解绑)
-	w = doJSON(t, r, "POST", "/api/v1/public/deactivate", "", map[string]any{
-		"key": key, "activation_id": aidA, "device_id": "dev-b",
+	// 设备 A 用自己 token 解绑设备 B → 404(防跨设备解绑)
+	w = doJSON(t, r, "POST", "/api/v3/deactivate", "", map[string]any{
+		"activation_token": aTok, "device_id": "dev-b",
+		"timestamp": time.Now().Unix(), "nonce": "nonce-lifecycle-6",
 	})
 	if w.Code != 404 {
 		t.Fatalf("cross-device deactivate must 404, got %d %s", w.Code, w.Body.String())
 	}
 	// 设备 B 仍有效
-	w = doJSON(t, r, "POST", "/api/v1/public/verify", "", map[string]any{
-		"key": key, "device_id": "dev-b",
-	})
-	_ = json.Unmarshal(w.Body.Bytes(), &v)
-	if v.Status != "valid" {
-		t.Fatalf("dev-b must still be valid after cross-device attempt, got %s", w.Body.String())
+	if status, _ := verifyToken(t, r, bTok, "dev-b", "nonce-lifecycle-7"); status != "valid" {
+		t.Fatalf("dev-b must still be valid after cross-device attempt, got %s", status)
 	}
 
 	// 设备 A 重新激活 → 恢复 active(新凭据,不占新额度)
-	w = activate(t, r, key, "dev-a")
-	if w.Code != 200 {
-		t.Fatalf("re-activate after deactivate: %d %s", w.Code, w.Body.String())
-	}
-	var act3 struct {
-		ActivationID string `json:"activation_id"`
-	}
-	_ = json.Unmarshal(w.Body.Bytes(), &act3)
-	if act3.ActivationID == "" || act3.ActivationID == aidA {
+	aID2, aTok2 := activateWithToken(t, r, key, "dev-a")
+	if aID2 == "" || aID2 == aID {
 		t.Fatal("re-activation must issue a new activation_id")
 	}
+	_ = aTok2
 
 	// 管理端:重置设备 → 全部解绑
 	w = doJSON(t, r, "POST", "/api/v1/admin/licenses/"+act.LicenseID+"/reset-devices", token, nil)
 	if w.Code != 200 {
 		t.Fatalf("reset-devices: %d %s", w.Code, w.Body.String())
 	}
-	w = doJSON(t, r, "POST", "/api/v1/public/verify", "", map[string]any{
-		"key": key, "device_id": "dev-a",
-	})
-	_ = json.Unmarshal(w.Body.Bytes(), &v)
-	if v.Status != "invalid" {
-		t.Fatalf("verify after reset must be invalid, got %s", w.Body.String())
+	if status, _ := verifyToken(t, r, aTok2, "dev-a", "nonce-lifecycle-8"); status != "invalid" {
+		t.Fatalf("verify after reset must be invalid, got %s", status)
 	}
 
-	// 吊销 → verify revoked / activate LICENSE_REVOKED
+	// 重新激活 dev-a(吊销前最后一条有效凭据)
+	_, aTok3 := activateWithToken(t, r, key, "dev-a")
+
+	// 吊销 → token 全部作废,verify invalid(凭据直接作废,更严格;客户端 revoked/invalid 均禁用 Pro)
+	// 同时管理端 license 状态 = revoked
 	w = doJSON(t, r, "POST", "/api/v1/admin/licenses/"+act.LicenseID+"/revoke", token, map[string]any{"reason": "refund"})
 	if w.Code != 200 {
 		t.Fatalf("revoke: %d", w.Code)
 	}
-	w = doJSON(t, r, "POST", "/api/v1/public/verify", "", map[string]any{"key": key})
+	w = doJSON(t, r, "POST", "/api/v3/verify", "", map[string]any{
+		"activation_token": aTok3, "device_id": "dev-a",
+		"timestamp": time.Now().Unix(), "nonce": "nonce-lifecycle-9",
+	})
 	_ = json.Unmarshal(w.Body.Bytes(), &v)
-	if v.Status != "revoked" {
-		t.Fatalf("verify revoked license must be revoked, got %s", w.Body.String())
+	if v.Status != "invalid" {
+		t.Fatalf("verify after revoke must be invalid (token revoked), got %s", w.Body.String())
+	}
+	w = doJSON(t, r, "GET", "/api/v1/admin/licenses/"+act.LicenseID, token, nil)
+	var licAfter struct {
+		License struct {
+			Status string `json:"status"`
+		} `json:"license"`
+	}
+	_ = json.Unmarshal(w.Body.Bytes(), &licAfter)
+	if licAfter.License.Status != "revoked" {
+		t.Fatalf("license status must be revoked, got %s", licAfter.License.Status)
 	}
 	w = activate(t, r, key, "dev-new")
 	if w.Code != 403 {

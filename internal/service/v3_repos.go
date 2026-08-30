@@ -63,7 +63,7 @@ func (r *ActivationTokenRepo) FindByTokenHash(ctx context.Context, tokenHash str
 	err := r.pool.QueryRow(ctx, `
 		SELECT t.id, t.activation_id, t.token_hash, t.created_at, t.expires_at, t.last_used_at, t.revoked_at,
 		       a.id, l.license_id, a.activation_id, a.device_id, a.device_name, a.device_fingerprint,
-		       a.platform, a.architecture, a.product_version, a.status, a.activated_at, a.last_seen_at,
+		       a.platform, a.architecture, a.product_version, a.status, a.state_version, a.activated_at, a.last_seen_at,
 		       a.deactivated_at, a.expires_at, a.revoked_at, a.ip, a.metadata
 		FROM activation_tokens t
 		JOIN activations a ON a.id = t.activation_id
@@ -73,7 +73,7 @@ func (r *ActivationTokenRepo) FindByTokenHash(ctx context.Context, tokenHash str
 	).Scan(
 		&t.ID, &t.ActivationID, &t.TokenHash, &t.CreatedAt, &t.ExpiresAt, &t.LastUsedAt, &t.RevokedAt,
 		&act.ID, &act.LicenseID, &act.ActivationID, &act.DeviceID, &act.DeviceName, &act.DeviceFingerprint,
-		&act.Platform, &act.Architecture, &act.ProductVersion, &act.Status, &act.ActivatedAt, &act.LastSeenAt,
+		&act.Platform, &act.Architecture, &act.ProductVersion, &act.Status, &act.StateVersion, &act.ActivatedAt, &act.LastSeenAt,
 		&act.DeactivatedAt, &act.ExpiresAt, &act.RevokedAt, &act.IP, &act.Metadata,
 	)
 	if err != nil {

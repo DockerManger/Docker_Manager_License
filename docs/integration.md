@@ -43,14 +43,16 @@ https://manager.kejizero.xyz/license-api
 
 | 操作 | 完整 URL(对外) | 内部路径(license-server) |
 |---|---|---|
-| 激活 | `https://manager.kejizero.xyz/license-api/api/v1/public/activate` | `/api/v1/public/activate` |
-| 验证 | `https://manager.kejizero.xyz/license-api/api/v1/public/verify` | `/api/v1/public/verify` |
-| 解绑 | `https://manager.kejizero.xyz/license-api/api/v1/public/deactivate` | `/api/v1/public/deactivate` |
+| 激活 | `https://manager.kejizero.xyz/license-api/api/v3/activate` | `/api/v3/activate` |
+| 验证 | `https://manager.kejizero.xyz/license-api/api/v3/verify` | `/api/v3/verify` |
+| 解绑 | `https://manager.kejizero.xyz/license-api/api/v3/deactivate` | `/api/v3/deactivate` |
+| SSE 事件流 | `https://manager.kejizero.xyz/license-api/api/v3/events` | `/api/v3/events`(长连接) |
 | 健康检查 | `https://manager.kejizero.xyz/license-api/health` | `/health`(别名 `/healthz` 兼容) |
 | 管理后台 | `https://manager.kejizero.xyz/`(SPA) | 前端 + `/api/v1/admin/*` |
 
 **前缀剥离**:反代配置 `uri strip_prefix /license-api` 后转发到 license-server 容器,
-license-server 内部**没有** `/license-api` 前缀——所有内部路由以 `/api/v1/...` 开头。
+license-server 内部**没有** `/license-api` 前缀——所有内部路由以 `/api/...` 开头。
+**V1/V2 公开 API(`/api/v1/public`)已删除**,只保留 `/api/v3`(公开)与 `/api/v1/admin`(管理)。
 
 开发/私有部署可用环境变量 `DM_LICENSE_SERVER_URL` 覆盖客户端地址;
 License Server 侧 `SERVER_ADDR` 控制监听(默认 `:3000`)。
@@ -190,14 +192,19 @@ license: func() bool { return service.LicenseFeatureActive(st, "compose") }
   (文档标注 deprecated);新客户端对旧服务端自动回退
 - License payload 带 `version`,未来 v3 由消费端明确拒绝而不是静默接受
 
-## 8. 在线授权闭环 API(客户端接入,V3)
+## 8. 在线授权闭环 API(客户端接入,V3 Event-Driven)
 
 客户端(消费端)导入 License 并通过本地 Ed25519 验签后,进入在线闭环:
+
+> **同步模型(V3)**:License 状态变化由 Server 主动通过 **Event + SSE** 通知客户端,
+> 客户端收到事件后调用 Verify 获取权威状态。**Event = Trigger,Verify = Authority**。
+> 禁止任何周期性 Verify / Heartbeat / Check-in / Lease 机制。
+> V2/Legacy 兼容路径(旧格式 key + activation_id)已全部删除,不存在 V3→V2 fallback。
 
 ### 8.1 激活(携带完整 License Key,仅首次激活/重新激活用)
 
 ```
-POST /api/v1/public/activate
+POST /api/v3/activate
 {
   "key": "<完整 License Key>",
   "device_id": "<机器唯一ID>",
@@ -220,7 +227,7 @@ POST /api/v1/public/activate
   "features": ["compose"],
   "max_devices": 3,
   "server_time": 1780000000,
-  "next_verify_after": 86400
+  "state_version": 1
 }
 ```
 
@@ -228,14 +235,15 @@ POST /api/v1/public/activate
 `LICENSE_EXPIRED` / `DEVICE_LIMIT_REACHED` / `RATE_LIMITED`。
 
 语义:
-- 同一设备重复激活 → 幂等(200,同一 activation_id,签发新 token,旧 token 吊销)
+- 同一设备重复激活 → 幂等(200,同一 activation_id,签发新 token,旧 token 吊销;`state_version+1`)
 - 解绑过的设备重新激活 → 恢复 active,发新 activation_id + 新 token,不占新额度
 - 活跃设备数 >= max_devices → `DEVICE_LIMIT_REACHED`(服务端事务+行锁,并发激活不突破)
+- 激活成功同时持久化 `activation.created` / `activation.rebound` 事件并推送 SSE
 
-### 8.2 定期验证(每 24h,即 next_verify_after;**不携带 License Key**)
+### 8.2 Verify(权威状态查询;仅由事件/重连/启动/手动触发,**无周期验证**)
 
 ```
-POST /api/v1/public/verify
+POST /api/v3/verify
 {
   "activation_token": "...",
   "device_id": "...",
@@ -256,14 +264,14 @@ POST /api/v1/public/verify
   "expires_at": 1810000000,
   "features": ["compose"],
   "server_time": 1780000000,
-  "minimum_client_version": "1.5.0",
-  "next_verify_after": 86400
+  "state_version": 2,
+  "minimum_client_version": "1.5.0"
 }
 ```
 
 | status | 客户端动作 |
 |---|---|
-| `valid` | 继续 Pro,记录 `last_successful_verify` + `server_time`(更新 clock_offset),24h 后再验 |
+| `valid` | 继续 Pro,记录 `last_successful_verify` + `server_time`(更新 clock_offset)+ `state_version` |
 | `blocked` | 版本被封禁,立即禁用 Pro(`CLIENT_VERSION_BLOCKED`) |
 | `revoked` | 立即禁用 Pro,提示"License revoked" |
 | `expired` | 立即禁用 Pro(本地 expires_at 也应同时判断) |
@@ -272,17 +280,15 @@ POST /api/v1/public/verify
 **版本控制**(服务端 `server_settings`):
 - `minimum_client_version`:客户端当前版本低于该值 → 本地标记 `UPDATE_REQUIRED`(提示升级,不封禁)
 - `blocked_versions`(JSON 数组):当前版本命中 → 服务端返回 `status=blocked`,禁用 Pro
-  (用于严重安全漏洞/协议漏洞/绕过漏洞的紧急封禁)
+  (用于严重安全漏洞/协议漏洞/绕过漏洞的紧急封禁);策略变更时推送全局事件 `version_policy.changed`
 
 **重放防护**:`timestamp` 必须落在服务端时间 ±5 分钟窗口内,`nonce` 必须未使用
 (服务端存 SHA-256,1 小时后清理)。违规返回 `400 REPLAY_DETECTED`。
 
-兼容:旧格式(仅传 `key` + `activation_id`)升级窗口期仍可用,文档标注 deprecated。
-
 ### 8.3 解绑
 
 ```
-POST /api/v1/public/deactivate
+POST /api/v3/deactivate
 {
   "activation_token": "...",
   "device_id": "...",
@@ -293,14 +299,32 @@ POST /api/v1/public/deactivate
 
 - 凭据(token)必须匹配该 License + 设备,防止 Device A 解绑 Device B(不匹配 → `ACTIVATION_NOT_FOUND`)
 - 吊销/过期的 License 也允许解绑(客户端清理)
-- 服务端同时吊销该激活的全部 token(解绑后旧 token 立即失效)
+- 服务端同时吊销该激活的全部 token(解绑后旧 token 立即失效),并推送 `activation.unbound` 事件
 
-### 8.4 限流
+### 8.4 SSE 事件流(主动同步核心)
+
+```
+GET /api/v3/events
+Authorization: Bearer <activation_token>
+X-Device-ID: <device_id>
+Last-Event-ID: evt_<sequence>(可选,标准 SSE 头)
+```
+
+- 长连接;Server 状态变化时推送事件(Event Store 持久化,`license_events` 表)
+- 事件只是 Trigger:客户端收到后必须调用 `/api/v3/verify` 获取权威状态,不直接改授权结论
+- **Replay**:重连携带 `Last-Event-ID`,服务端补齐缺失事件;无法补齐 → 推送 `resync_required` → 客户端 Verify
+- **Gap 检测**:事件序号跳变(中间被清理)→ `resync_required`
+- 事件格式:`event: <type>` / `id: evt_N` / `data: {...}`,20s 保活注释行(`: keep-alive`,非 Heartbeat)
+- 事件类型:`license.changed` / `license.revoked` / `activation.created` / `activation.revoked` /
+  `activation.unbound` / `activation.rebound` / `version_policy.changed` 等
+- SSE 认证绑定激活:Device A 只能收到 Device A 的事件(凭据无效 → 401)
+
+### 8.5 限流
 
 `activate`/`deactivate`:15min 20 次/IP;`verify`:15min 120 次/IP。超限 `RATE_LIMITED`。
 超限与无效凭据均写入 `security_events`(管理端可查)。
 
-### 8.5 Server Time(防本地时间作弊)
+### 8.6 Server Time(防本地时间作弊)
 
 - 所有公开 API 成功响应携带 `server_time`
 - 客户端保存 `last_server_time / last_local_time`,计算 `clock_offset = server_time - local_time`
@@ -308,14 +332,16 @@ POST /api/v1/public/deactivate
 - 本地时钟回退检测:`local_now < last_local_time - 5min` → `CLOCK_ROLLBACK_DETECTED`,禁用 Pro
   (正常 NTP 微调不会误判)
 
-### 8.6 Grace Period(客户端本地维护)
+### 8.7 Grace Period(客户端本地维护,默认 72h)
 
-服务端只负责状态判定;7 天宽限由客户端保存 `last_successful_verify` 实现:
-验证失败(网络/服务不可达)→ 宽限期内继续 Pro;超过宽限期仍未验证成功 → 禁用 Pro。
-**revoked/blocked 不能进入宽限**:服务端明确判定时立即禁用。
-**验证必须带超时(建议 10s),且不得阻塞 Docker_Manager_Go 主流程(独立后台任务)。**
+服务端只负责状态判定;宽限由客户端保存 `last_successful_verify` 实现:
+- Server 不可达(SSE 断开 / Verify 网络失败)→ 宽限期内继续 Pro
+- **宽限必须有上限**(默认 72h,`DM_LICENSE_GRACE_PERIOD` 可覆盖):到期 → `grace_expired` → 禁用 Pro
+- **恢复 Server 的唯一正常机制:SSE Reconnect Success = Server Recovery Signal → 立即 V3 Verify**
+- `revoked/blocked` 不能进入宽限:服务端明确判定时立即禁用;已判定状态不被 Server 不可达覆盖
+- 宽限评估发生在每次 Verify 失败 / SSE 断开(重连尝试本身即评估点,无需周期验证)
 
-### 8.7 安全事件(管理端)
+### 8.8 安全事件(管理端)
 
 `POST /api/v1/admin/security-events?page=&page_size=&type=` 可查:
 `invalid_signature` / `invalid_token` / `rate_limit_exceeded` / `replay_detected` /

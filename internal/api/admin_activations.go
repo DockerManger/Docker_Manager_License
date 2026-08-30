@@ -56,6 +56,22 @@ func adminResetDevices(d *Deps) gin.HandlerFunc {
 	}
 }
 
+// adminLicenseEvents GET /api/v1/admin/licenses/:id/events
+// 该 License 的事件历史(Event Store 审计:激活/解绑/吊销/延期/策略变更)。
+func adminLicenseEvents(d *Deps) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		items, err := d.LicenseSvc.ListLicenseEvents(c.Request.Context(), c.Param("id"), 0)
+		if err != nil {
+			handleError(c, err)
+			return
+		}
+		if items == nil {
+			items = []*model.LicenseEvent{}
+		}
+		c.JSON(http.StatusOK, gin.H{"items": items})
+	}
+}
+
 // ---------- 签名密钥注册表(Admin) ----------
 
 // adminListSigningKeys GET /api/v1/admin/signing-keys

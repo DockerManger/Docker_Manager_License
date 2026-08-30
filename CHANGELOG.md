@@ -37,6 +37,8 @@
 - **许可证列表状态筛选 42P18**:COUNT 查询曾复用主查询的 `$3` 参数编号(仅传 1 个参数),
   导致 PG 无法绑定参数报 `could not determine data type of parameter $1`;现独立编号,
   并支持「已过期」动态筛选(按 `expires_at` 计算,数据库 status 列不维护过期状态)
+- **安全事件类型筛选 42P18**:SecurityEventRepo.List 同样存在 COUNT 查询参数编号
+  错位(事件类型筛选全部报 42P18),已独立编号修复(含回归测试,7 种事件类型全覆盖)
 - **主界面重复标题**:顶栏标题与页面内 PageHeader 重复显示两遍,已移除顶栏
   title/description(页面内保留一份)
 - 签发 API 透传 customer_id/subscription_id(此前被丢弃,payload 缺关联字段)

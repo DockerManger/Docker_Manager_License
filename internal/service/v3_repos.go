@@ -136,17 +136,22 @@ func (r *SecurityEventRepo) Log(ctx context.Context, e *model.SecurityEvent) {
 		e.EventType, e.LicenseID, e.ActivationID, e.DeviceID, e.IP, e.UserAgent, e.Details)
 }
 
-// List 安全事件分页(时间倒序)。
+// List 安全事件分页(时间倒序)。eventType 空 = 全部。
 func (r *SecurityEventRepo) List(ctx context.Context, offset, limit int, eventType string) ([]*model.SecurityEvent, int, error) {
 	var total int
 	where := ""
 	args := []any{limit, offset}
+	countWhere := ""
+	countArgs := []any{}
 	if eventType != "" {
+		// 主查询:limit=$1 offset=$2 event_type=$3
 		where = " WHERE event_type = $3"
 		args = append(args, eventType)
+		// COUNT 查询独立编号:参数从 $1 开始(与主查询共用 $3 会导致 42P18 参数无法绑定)
+		countWhere = " WHERE event_type = $1"
+		countArgs = append(countArgs, eventType)
 	}
-	if err := r.pool.QueryRow(ctx, `SELECT COUNT(*) FROM security_events`+where,
-		append([]any{}, args[2:]...)...).Scan(&total); err != nil {
+	if err := r.pool.QueryRow(ctx, `SELECT COUNT(*) FROM security_events`+countWhere, countArgs...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 	rows, err := r.pool.Query(ctx, `

@@ -150,7 +150,14 @@ func TestV3SecurityEvents(t *testing.T) {
 	if w.Code != 200 {
 		t.Fatalf("invalid token verify must return 200 invalid, got %d", w.Code)
 	}
-	// admin 查询 security-events
+	// admin 查询 security-events(带类型筛选,回归:COUNT 查询曾复用 $3 参数编号导致 42P18)
+	for _, et := range []string{"invalid_token", "replay_detected", "rate_limit_exceeded", "device_limit_exceeded", "client_version_blocked", "tampered_timestamp", "invalid_signature"} {
+		w = doJSON(t, r, "GET", "/api/v1/admin/security-events?type="+et, adminTok, nil)
+		if w.Code != 200 {
+			t.Fatalf("security-events?type=%s: %d %s", et, w.Code, w.Body.String())
+		}
+	}
+	// 不带类型筛选
 	w = doJSON(t, r, "GET", "/api/v1/admin/security-events", adminTok, nil)
 	if w.Code != 200 {
 		t.Fatalf("security-events: %d", w.Code)

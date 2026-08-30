@@ -19,7 +19,7 @@
 # ============================================================
 services:
   license-server:
-    image: zhaoweiwen123/dockorae-auth:latest
+    image: dockorae/dockorae-auth:latest
     container_name: dockorae-auth
     restart: unless-stopped
     ports:

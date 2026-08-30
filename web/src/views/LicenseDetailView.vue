@@ -341,6 +341,11 @@ const revokeReason = ref('Refund')
 
 const showReset = ref(false)
 const deactivateTarget = ref<Activation | null>(null)
+// 非响应式"待解绑目标":reka-ui AlertDialogAction 点击时内部先关闭对话框
+// (@update:open 同步把 deactivateTarget 清为 null),若 deactivate() 读响应式
+// ref 会拿到 null 直接 return → 解绑请求从未发出(设备永远"有效")。
+// 用普通变量承载目标,闭包捕获,不受对话框关闭影响。
+let pendingDeactivate: Activation | null = null
 
 const isExpired = computed(() => !!license.value && license.value.expires_at > 0 && license.value.expires_at * 1000 < Date.now())
 const activeCount = computed(() => activations.value.filter((a) => a.status === 'active').length)
@@ -450,17 +455,20 @@ async function resetDevices() {
 }
 
 function openDeactivate(a: Activation) {
+  pendingDeactivate = a
   deactivateTarget.value = a
 }
 
 async function deactivate() {
-  if (!deactivateTarget.value) return
+  const target = pendingDeactivate
+  if (!target) return
   busy.value = true
   try {
     await api.post(
-      `/api/v1/admin/licenses/${license.value!.license_id}/activations/${deactivateTarget.value.id}/deactivate`,
+      `/api/v1/admin/licenses/${license.value!.license_id}/activations/${target.id}/deactivate`,
     )
     toastOk(t('detail.deactivateSuccess'))
+    pendingDeactivate = null
     deactivateTarget.value = null
     load()
   } catch (e: any) {

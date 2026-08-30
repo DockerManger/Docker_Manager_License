@@ -445,20 +445,27 @@ async function exportKey(l: License) {
 const revokeTarget = ref<License | null>(null)
 const revokeReason = ref('Refund')
 const revokeBusy = ref(false)
+// 非响应式"待吊销目标":reka-ui AlertDialogAction 点击时内部先关闭对话框,
+// @update:open 同步清空 revokeTarget → confirmRevoke 读到 null 直接 return,
+// 吊销请求从未发出。用普通变量承载目标,不受对话框关闭影响。
+let pendingRevoke: License | null = null
 
 function openRevoke(l: License) {
+  pendingRevoke = l
   revokeTarget.value = l
   revokeReason.value = 'Refund'
 }
 
 async function confirmRevoke() {
-  if (!revokeTarget.value) return
+  const target = pendingRevoke
+  if (!target) return
   revokeBusy.value = true
   try {
-    await api.post(`/api/v1/admin/licenses/${revokeTarget.value.license_id}/revoke`, {
+    await api.post(`/api/v1/admin/licenses/${target.license_id}/revoke`, {
       reason: revokeReason.value,
     })
     toastOk(t('revoke.successToast'))
+    pendingRevoke = null
     revokeTarget.value = null
     load(page.value, status.value)
   } catch (e: any) {
